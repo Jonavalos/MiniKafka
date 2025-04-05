@@ -1,49 +1,111 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include <unistd.h>  // para sleep
+#include <unistd.h>
 
-pthread_mutex_t lock;
+// Nodo de la cola
+typedef struct Node {
+    int data;
+    struct Node* next;
+} Node;
 
-void* thread_func(void* arg) {
-    int id = *(int*)arg;
+// Cola con mutex
+typedef struct Queue {
+    Node* front;
+    Node* rear;
+    pthread_mutex_t mutex;
+} Queue;
 
-    for (int i = 0; i < 5; i++) {
-        // Intentar adquirir el mutex sin bloquear
-        if (pthread_mutex_trylock(&lock) == 0) {
-            printf("Hilo %d accede a la sección crítica (iteración %d)\n", id, i);
-            sleep(1); // Simula trabajo en la sección crítica
-            pthread_mutex_unlock(&lock);
-        }
-        else {
-            printf("Hilo %d NO pudo acceder a la sección crítica (iteración %d)\n", id, i);
-        }
+// Inicializa la cola
+void initQueue(Queue* q) {
+    q->front = q->rear = NULL;
+    pthread_mutex_init(&q->mutex, NULL);
+}
 
-        sleep(1); // Espera antes de volver a intentar
+// Enqueue (agregar elemento al final)
+void enqueue(Queue* q, int value) {
+    pthread_mutex_lock(&q->mutex);
+
+    Node* newNode = malloc(sizeof(Node));
+    newNode->data = value;
+    newNode->next = NULL;
+
+    if (q->rear == NULL) {
+        q->front = q->rear = newNode;
+    } else {
+        q->rear->next = newNode;
+        q->rear = newNode;
     }
 
+    printf("Enqueued: %d\n", value);
+    pthread_mutex_unlock(&q->mutex);
+}
+
+// Dequeue (sacar elemento del frente)
+int dequeue(Queue* q, int* value) {
+    pthread_mutex_lock(&q->mutex);
+
+    if (q->front == NULL) {
+        pthread_mutex_unlock(&q->mutex);
+        return 0; // cola vacÃ­a
+    }
+
+    Node* temp = q->front;
+    *value = temp->data;
+    q->front = q->front->next;
+
+    if (q->front == NULL)
+        q->rear = NULL;
+
+    free(temp);
+    pthread_mutex_unlock(&q->mutex);
+    return 1;
+}
+
+// Liberar la cola
+void destroyQueue(Queue* q) {
+    int val;
+    while (dequeue(q, &val));
+    pthread_mutex_destroy(&q->mutex);
+}
+
+
+#define NUM_OPS 5
+
+Queue q;
+
+void* producer(void* arg) {
+    for (int i = 0; i < NUM_OPS; i++) {
+        enqueue(&q, i + 1);
+        sleep(1);
+    }
+    return NULL;
+}
+
+void* consumer(void* arg) {
+    int val;
+    for (int i = 0; i < NUM_OPS; i++) {
+        while (!dequeue(&q, &val)) {
+            // esperar si estÃ¡ vacÃ­a
+            usleep(100000);
+        }
+        printf("Dequeued: %d\n", val);
+        sleep(1);
+    }
     return NULL;
 }
 
 int main() {
-    pthread_t threads[3];
-    int ids[3] = { 1, 2, 3 };
+    initQueue(&q);
 
-    // Inicializar mutex
-    pthread_mutex_init(&lock, NULL);
+    pthread_t prod, cons;
+    pthread_create(&prod, NULL, producer, NULL);
+    pthread_create(&cons, NULL, consumer, NULL);
 
-    // Crear hilos
-    for (int i = 0; i < 3; i++) {
-        pthread_create(&threads[i], NULL, thread_func, &ids[i]);
-    }
+    pthread_join(prod, NULL);
+    pthread_join(cons, NULL);
 
-    // Esperar a que los hilos terminen
-    for (int i = 0; i < 3; i++) {
-        pthread_join(threads[i], NULL);
-    }
-
-    // Destruir mutex
-    pthread_mutex_destroy(&lock);
-
+    destroyQueue(&q);
     return 0;
 }
+
