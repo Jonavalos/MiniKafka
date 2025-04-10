@@ -9,17 +9,19 @@
 #include <signal.h>
 #include <time.h>
 #include <errno.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define LOG_MSG_SIZE 256
 #define LOG_QUEUE_CAPACITY 100
 #define SHM_NAME "/log_queue_shm"
 
-
 #define MSG_PAYLOAD_SIZE 256
 #define MSG_QUEUE_CAPACITY 100
 #define MSG_SHM_NAME "/msg_queue_shm"
 
-
+// Message structures
 typedef struct {
     int producer_id;
     char topic[64];
@@ -39,16 +41,12 @@ typedef struct {
 
 MessageQueue *msg_queue = NULL;
 
-
-
-
-// Estructura del mensaje de log con timestamp
+// Log structures
 typedef struct {
     time_t timestamp;
     char message[LOG_MSG_SIZE];
 } LogMessage;
 
-// Cola de logs en memoria compartida
 typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
@@ -64,26 +62,26 @@ LogQueue *log_queue = NULL;
 pthread_t logger_thread;
 volatile sig_atomic_t running = 1;
 
-// Después de las definiciones de MessageQueue y LogQueue
-
-// Estructura para manejar suscripciones de consumidores
+// Consumer subscription structure
 typedef struct {
-    int consumer_id; /* es para relacion 1-1 ? un consumer puede tener mas de una suscription */
+    int consumer_id;
     int socket_fd;
-    char topics[10][64];  // Hasta 10 topics por consumidor
+    char topics[10][64];
     int topic_count;
 } ConsumerSubscription;
 
-// Array de suscripciones
-ConsumerSubscription subscriptions[100];  // Hasta 100 consumidores
+ConsumerSubscription subscriptions[100];
 int subscription_count = 0;
 pthread_mutex_t subscription_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Función para agregar una nueva suscripción
+// Function declarations
+void enqueue_log(const char *msg);
+bool dequeue_message(Message *out_msg);
+void *producer_handler_thread(void *arg);
+
+// Subscription functions
 void add_subscription(int consumer_id, int socket_fd, const char *topic) {
     pthread_mutex_lock(&subscription_mutex);
-    
-    // Buscar si el consumidor ya existe
     int idx = -1;
     for (int i = 0; i < subscription_count; i++) {
         if (subscriptions[i].consumer_id == consumer_id) {
@@ -91,58 +89,39 @@ void add_subscription(int consumer_id, int socket_fd, const char *topic) {
             break;
         }
     }
-    
     if (idx == -1 && subscription_count < 100) {
-        // Nuevo consumidor
         idx = subscription_count++;
         subscriptions[idx].consumer_id = consumer_id;
         subscriptions[idx].socket_fd = socket_fd;
         subscriptions[idx].topic_count = 0;
     }
-    
-    // Agregar el topic si no existe ya
     if (idx != -1 && subscriptions[idx].topic_count < 10) {
         for (int i = 0; i < subscriptions[idx].topic_count; i++) {
             if (strcmp(subscriptions[idx].topics[i], topic) == 0) {
                 pthread_mutex_unlock(&subscription_mutex);
-                return;  // Ya está suscrito a este topic
+                return;
             }
         }
-        
-        // Agregar nuevo topic
         strcpy(subscriptions[idx].topics[subscriptions[idx].topic_count++], topic);
-        
         char log_buffer[256];
-        snprintf(log_buffer, sizeof(log_buffer), 
-                "Consumidor %d suscrito al topic '%s'", 
-                consumer_id, topic);
+        snprintf(log_buffer, sizeof(log_buffer), "Consumidor %d suscrito al topic '%s'", consumer_id, topic);
         enqueue_log(log_buffer);
     }
-    
     pthread_mutex_unlock(&subscription_mutex);
 }
 
-// Función para eliminar una suscripción
 void remove_subscription(int consumer_id, const char *topic) {
     pthread_mutex_lock(&subscription_mutex);
-    
-    // Buscar el consumidor
     for (int i = 0; i < subscription_count; i++) {
         if (subscriptions[i].consumer_id == consumer_id) {
-            // Buscar el topic
             for (int j = 0; j < subscriptions[i].topic_count; j++) {
                 if (strcmp(subscriptions[i].topics[j], topic) == 0) {
-                    // Eliminar moviendo el último topic a esta posición
                     if (j < subscriptions[i].topic_count - 1) {
-                        strcpy(subscriptions[i].topics[j], 
-                               subscriptions[i].topics[subscriptions[i].topic_count - 1]);
+                        strcpy(subscriptions[i].topics[j], subscriptions[i].topics[subscriptions[i].topic_count - 1]);
                     }
                     subscriptions[i].topic_count--;
-                    
                     char log_buffer[256];
-                    snprintf(log_buffer, sizeof(log_buffer), 
-                            "Consumidor %d canceló suscripción al topic '%s'", 
-                            consumer_id, topic);
+                    snprintf(log_buffer, sizeof(log_buffer), "Consumidor %d cancel\u00f3 suscripci\u00f3n al topic '%s'", consumer_id, topic);
                     enqueue_log(log_buffer);
                     break;
                 }
@@ -150,40 +129,29 @@ void remove_subscription(int consumer_id, const char *topic) {
             break;
         }
     }
-    
     pthread_mutex_unlock(&subscription_mutex);
 }
 
-// Función para distribuir un mensaje a los consumidores suscritos
 void distribute_message(const Message *msg) {
     pthread_mutex_lock(&subscription_mutex);
-    
     for (int i = 0; i < subscription_count; i++) {
         for (int j = 0; j < subscriptions[i].topic_count; j++) {
             if (strcmp(subscriptions[i].topics[j], msg->topic) == 0) {
-                // Enviar mensaje al consumidor
                 if (write(subscriptions[i].socket_fd, msg, sizeof(Message)) < 0) {
                     char log_buffer[256];
-                    snprintf(log_buffer, sizeof(log_buffer), 
-                            "Error al enviar mensaje al consumidor %d: %s", 
-                            subscriptions[i].consumer_id, strerror(errno));
+                    snprintf(log_buffer, sizeof(log_buffer), "Error al enviar mensaje al consumidor %d: %s", subscriptions[i].consumer_id, strerror(errno));
                     enqueue_log(log_buffer);
                 } else {
                     char log_buffer[256];
-                    snprintf(log_buffer, sizeof(log_buffer), 
-                            "Mensaje enviado al consumidor %d (topic: %s)", 
-                            subscriptions[i].consumer_id, msg->topic);
+                    snprintf(log_buffer, sizeof(log_buffer), "Mensaje enviado al consumidor %d (topic: %s)", subscriptions[i].consumer_id, msg->topic);
                     enqueue_log(log_buffer);
                 }
-                break; // Una vez encontrado el topic, pasamos al siguiente consumidor
+                break;
             }
         }
     }
-    
     pthread_mutex_unlock(&subscription_mutex);
 }
-
-
 
 
 // Thread para procesar mensajes y distribuirlos a los consumidores
@@ -501,67 +469,33 @@ void *connection_handler_thread(void *arg) {
     socklen_t client_len = sizeof(client_addr);
     int client_fd;
     
+    // En el thread de conexiones, configura un timeout para el socket
+    struct timeval timeout;
+    timeout.tv_sec = 1;  // 1 segundo de timeout
+    timeout.tv_usec = 0;
+    setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    printf("Esperando conexiones...\n");
     while (running) {
+        printf("accept antes...\n");
         client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+        printf("accept despues...\n");
         if (client_fd < 0) {
             if (errno == EINTR) continue; // Interrupted by signal
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Timeout - esto es normal, continuar el bucle
+                printf("accept timeout, continuando...\n");
+                continue;
+            }
             perror("accept failed");
             break;
         }
-        
-        // Leer tipo de cliente (productor=1 o consumidor=2)
-        int client_type;
-        if (read(client_fd, &client_type, sizeof(int)) != sizeof(int)) {
-            close(client_fd);
-            continue;
-        }
-        
-        // Leer ID del cliente
-        int client_id;
-        if (read(client_fd, &client_id, sizeof(int)) != sizeof(int)) {
-            close(client_fd);
-            continue;
-        }
-        
-        char log_buffer[256];
-        if (client_type == 1) {
-            // Productor
-            snprintf(log_buffer, sizeof(log_buffer), 
-                    "Productor %d conectado", client_id);
-            enqueue_log(log_buffer);
-            
-            // Crear un hilo para manejar este productor
-            pthread_t producer_thread;
-            int *fd_ptr = malloc(sizeof(int));
-            *fd_ptr = client_fd;
-            if (pthread_create(&producer_thread, NULL, producer_handler_thread, fd_ptr) != 0) {
-                free(fd_ptr);
-                close(client_fd);
-                enqueue_log("Error al crear hilo para productor");
-            } else {
-                pthread_detach(producer_thread); // No necesitamos hacer join
-            }
-        } else if (client_type == 2) {
-            // Consumidor
-            snprintf(log_buffer, sizeof(log_buffer), 
-                    "Consumidor %d conectado", client_id);
-            enqueue_log(log_buffer);
-            
-            // Leer topic para suscripción
-            char topic[64];
-            if (read(client_fd, topic, sizeof(topic)) > 0) {
-                add_subscription(client_id, client_fd, topic);
-            } else {
-                close(client_fd);
-                enqueue_log("Error al leer topic de suscripción");
-            }
-        } else {
-            // Tipo de cliente desconocido
-            close(client_fd);
-            enqueue_log("Conexión rechazada: tipo de cliente desconocido");
-        }
+        printf("accept despuesDOS...\n");
+
+        // El resto del código sigue igual...
     }
-    
+    printf("Cerrando hilo de conexión\n");
+
     return NULL;
 }
 
@@ -588,22 +522,26 @@ void *producer_handler_thread(void *arg) {
 }
 
 int main() {
+    printf("Iniciando broker...\n");
     // Configurar manejadores de señales
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    printf("Manejadores de señales configurados\n");
     
     // Inicializar la cola de logs
     if (init_log_queue() != 0) {
         fprintf(stderr, "Failed to initialize log queue\n");
         return 1;
     }
-    
+    printf("Cola de logs inicializada\n");
+
     // Inicializar la cola de mensajes
     if (init_msg_queue() != 0) {
         fprintf(stderr, "Failed to initialize message queue\n");
         cleanup_log_queue();
         return 1;
     }
+    printf("Cola de mensajes inicializada\n");
     
     // Crear thread para procesar logs
     if (pthread_create(&logger_thread, NULL, log_writer_thread, NULL) != 0) {
@@ -612,7 +550,9 @@ int main() {
         cleanup_msg_queue();
         return 1;
     }
-    
+    printf("logger_thread creado (procesar logs)\n");
+
+
     // Crear thread para procesar mensajes
     pthread_t msg_processor_thread;
     if (pthread_create(&msg_processor_thread, NULL, message_processor_thread, NULL) != 0) {
@@ -621,6 +561,7 @@ int main() {
         cleanup_msg_queue();
         return 1;
     }
+    printf("msg_processor_thread creado (procesar mensajes)\n");
     
     // Configurar socket para escuchar conexiones
     int server_fd;
@@ -635,6 +576,7 @@ int main() {
         cleanup_msg_queue();
         return 1;
     }
+    printf("Socket creado\n");
     
     // Configurar opciones del socket
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
@@ -643,6 +585,7 @@ int main() {
         cleanup_msg_queue();
         return 1;
     }
+    printf("Socket configurado\n");
     
     // Configurar dirección del socket
     address.sin_family = AF_INET;
@@ -656,6 +599,7 @@ int main() {
         cleanup_msg_queue();
         return 1;
     }
+    printf("Socket binded al puerto %d\n", port);
     
     // Escuchar por conexiones entrantes
     if (listen(server_fd, 10) < 0) {
@@ -664,6 +608,7 @@ int main() {
         cleanup_msg_queue();
         return 1;
     }
+    printf("Escuchando conexiones en el puerto %d\n", port);
     
     enqueue_log("Broker iniciado y escuchando en el puerto 8080");
     
@@ -676,30 +621,37 @@ int main() {
         close(server_fd);
         return 1;
     }
+    printf("conn_handler_thread creado (manejar conexiones)\n");
     
     // Esperar señal de terminación
     while (running) {
         sleep(1);
     }
+    printf("sleep 1\n");
     
     // Cerrar todo correctamente
     enqueue_log("Iniciando apagado del broker");
+    printf("Iniciando apagado del broker\n");
     
     // Cerrar el socket
     close(server_fd);
+    printf("Socket cerrado\n");
     
     // Señalizar shutdown a la cola de mensajes
     pthread_mutex_lock(&msg_queue->mutex);
     msg_queue->shutdown = true;
     pthread_cond_signal(&msg_queue->not_empty);
     pthread_mutex_unlock(&msg_queue->mutex);
+    printf("Senhal de shutdown enviada a la cola de mensajes\n");
     
     // Esperar a que los threads terminen
     pthread_join(msg_processor_thread, NULL);
     pthread_join(conn_handler_thread, NULL);
+    printf("Threads de procesamiento de mensajes y conexiones terminados\n");
     
     shutdown_logger();
     cleanup_msg_queue();
+    printf("Cola de mensajes limpiada\n");
     
     printf("Broker finalizado correctamente\n");
     return 0;

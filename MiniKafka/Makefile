@@ -1,28 +1,19 @@
 CC = gcc
-CFLAGS = -Wall -pthread
+CFLAGS = -Wall -Wextra -pthread
+LDFLAGS = -pthread -lrt
 
-# Objetivo por defecto
-all: broker
+all: broker producer consumer
 
-# Regla para compilar el ejecutable
 broker: broker.c
-	$(CC) $(CFLAGS) broker.c -o broker
+	$(CC) $(CFLAGS) -o broker broker.c $(LDFLAGS)
 
-# Regla para limpiar los archivos generados
+producer: producer.c
+	$(CC) $(CFLAGS) -o producer producer.c $(LDFLAGS)
+
+consumer: consumer.c
+	$(CC) $(CFLAGS) -o consumer consumer.c $(LDFLAGS)
+
 clean:
-	rm -f broker
+	rm -f broker producer consumer *.o
 
-
-# CC = gcc
-# CFLAGS = -Wall -pthread
-
-# # Objetivo por defecto
-# all: queue_example
-
-# # Regla para compilar el ejecutable
-# queue_example: mutexEG.c
-# 	$(CC) $(CFLAGS) mutexEG.c -o queue_example
-
-# # Regla para limpiar los archivos generados
-# clean:
-# 	rm -f queue_example
+.PHONY: all clean
