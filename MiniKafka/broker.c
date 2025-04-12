@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdarg.h>
 
 #define LOG_MSG_SIZE 256
 #define LOG_QUEUE_CAPACITY 100
@@ -75,7 +76,7 @@ int subscription_count = 0;
 pthread_mutex_t subscription_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Function declarations
-void enqueue_log(const char *msg);
+void enqueue_log(const char *format, ...);
 bool dequeue_message(Message *out_msg);
 void *producer_handler_thread(void *arg);
 
@@ -108,8 +109,7 @@ void add_subscription(int consumer_id, int socket_fd, const char *topic) {
         }
         strcpy(subscriptions[idx].topics[subscriptions[idx].topic_count++], topic);
         char log_buffer[256];
-        snprintf(log_buffer, sizeof(log_buffer), "Consumidor %d suscrito al topic '%s'", consumer_id, topic);
-        enqueue_log(log_buffer);
+        enqueue_log("Consumidor %d se suscribió al topic '%s'", consumer_id, topic);
     }
     pthread_mutex_unlock(&subscription_mutex);
     printf("Agregando suscripción después del unlock: consumidor %d, socket %d, topic %s\n", consumer_id, socket_fd, topic);
@@ -126,8 +126,7 @@ void remove_subscription(int consumer_id, const char *topic) {
                     }
                     subscriptions[i].topic_count--;
                     char log_buffer[256];
-                    snprintf(log_buffer, sizeof(log_buffer), "Consumidor %d cancel\u00f3 suscripci\u00f3n al topic '%s'", consumer_id, topic);
-                    enqueue_log(log_buffer);
+                    enqueue_log("Consumidor %d canceló su suscripción al topic '%s'", consumer_id, topic);
                     break;
                 }
             }
@@ -147,13 +146,11 @@ void distribute_message(const Message *msg) {
             printf("  - '%s'\n", subscriptions[i].topics[j]);
             if (strcmp(subscriptions[i].topics[j], msg->topic) == 0) {
                 if (write(subscriptions[i].socket_fd, msg, sizeof(Message)) < 0) {
-                    char log_buffer[256];
-                    snprintf(log_buffer, sizeof(log_buffer), "Error al enviar mensaje al consumidor %d: %s", subscriptions[i].consumer_id, strerror(errno));
-                    enqueue_log(log_buffer);
+                    enqueue_log("Error al enviar mensaje (productor %d, topic '%s') al consumidor %d: %s",
+                                msg->producer_id, msg->topic, subscriptions[i].consumer_id, strerror(errno));
                 } else {
-                    char log_buffer[256];
-                    snprintf(log_buffer, sizeof(log_buffer), "Mensaje enviado al consumidor %d (topic: %s)", subscriptions[i].consumer_id, msg->topic);
-                    enqueue_log(log_buffer);
+                    enqueue_log("Mensaje (productor %d, topic '%s') enviado al consumidor %d",
+                                msg->producer_id, msg->topic, subscriptions[i].consumer_id);
                 }
                 break;
             }
@@ -162,32 +159,26 @@ void distribute_message(const Message *msg) {
     pthread_mutex_unlock(&subscription_mutex);
 }
 
-
 // Thread para procesar mensajes y distribuirlos a los consumidores
 void *message_processor_thread(void *arg) {
     Message msg;
-    
+
     while (running || (msg_queue && msg_queue->count > 0)) {
         if (dequeue_message(&msg)) {
-            // Registrar recepción del mensaje
-            char log_buffer[256];
-            snprintf(log_buffer, sizeof(log_buffer), 
-                    "Procesando mensaje del productor %d con topic '%s'", 
-                    msg.producer_id, msg.topic);
-            enqueue_log(log_buffer);
-            
+            // Registrar recepción del mensaje CON el contenido
+            enqueue_log("Mensaje recibido del productor %d con topic '%s', payload: '%s'",
+                        msg.producer_id, msg.topic, msg.payload);
+
             // Distribuir el mensaje a los consumidores suscritos
             distribute_message(&msg);
         }
-        
+
         // Pequeña pausa para evitar consumo excesivo de CPU
         usleep(1000); // 1ms
     }
-    
+
     return NULL;
 }
-
-
 
 
 
@@ -338,32 +329,35 @@ void enqueue_message(int producer_id, const char *topic, const char *payload) {
 
 
 // Función para añadir logs a la cola con reintentos
-void enqueue_log(const char *msg) {
-    if (!log_queue || !msg) return;
-    
+void enqueue_log(const char *format, ...) {
+    if (!log_queue) return;
+
     pthread_mutex_lock(&log_queue->mutex);
-    
+
     // Esperar hasta que haya espacio disponible o shutdown
     while (log_queue->count >= LOG_QUEUE_CAPACITY && !log_queue->shutdown) {
         pthread_cond_wait(&log_queue->not_full, &log_queue->mutex);
     }
-    
+
     // Salir si estamos en shutdown
     if (log_queue->shutdown) {
         pthread_mutex_unlock(&log_queue->mutex);
         return;
     }
-    
+
     // Añadir timestamp actual
     log_queue->messages[log_queue->tail].timestamp = time(NULL);
-    
-    // Copiar mensaje de manera segura
-    strncpy(log_queue->messages[log_queue->tail].message, msg, LOG_MSG_SIZE - 1);
+
+    // Formatear el mensaje de log con argumentos variables
+    va_list args;
+    va_start(args, format);
+    vsnprintf(log_queue->messages[log_queue->tail].message, LOG_MSG_SIZE - 1, format, args);
+    va_end(args);
     log_queue->messages[log_queue->tail].message[LOG_MSG_SIZE - 1] = '\0';
-    
+
     log_queue->tail = (log_queue->tail + 1) % LOG_QUEUE_CAPACITY;
     log_queue->count++;
-    
+
     // Notificar que hay un nuevo mensaje
     pthread_cond_signal(&log_queue->not_empty);
     pthread_mutex_unlock(&log_queue->mutex);
@@ -480,7 +474,7 @@ void *connection_handler_thread(void *arg) {
 
     // En el thread de conexiones, configura un timeout para el socket
     struct timeval timeout;
-    timeout.tv_sec = 10;
+    timeout.tv_sec = 100;
     timeout.tv_usec = 0;
     setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -499,6 +493,7 @@ void *connection_handler_thread(void *arg) {
             break;
         }
         printf("Cliente conectado con FD: %d\n", client_fd);
+        enqueue_log("Cliente conectado con FD: %d", client_fd);
 
         // Leer los primeros bytes para determinar si es productor o consumidor (y su acción)
         char buffer[128];
@@ -506,6 +501,7 @@ void *connection_handler_thread(void *arg) {
         if (bytes_received > 0) {
             buffer[bytes_received] = '\0';
             printf("Datos recibidos del cliente %d: '%s'\n", client_fd, buffer);
+            enqueue_log("Recibidos datos del cliente %d: '%s'", client_fd, buffer);
 
             // Procesar mensaje de suscripción
             if (strncmp(buffer, "SUBSCRIBE:", 10) == 0) {
@@ -518,6 +514,7 @@ void *connection_handler_thread(void *arg) {
                     continue; // Volver a esperar más conexiones
                 } else {
                     fprintf(stderr, "Formato de suscripción incorrecto del cliente %d: '%s'\n", client_fd, buffer);
+                    enqueue_log("Formato de suscripción incorrecto del cliente %d: '%s'", client_fd, buffer);
                     close(client_fd);
                     continue;
                 }
@@ -541,9 +538,11 @@ void *connection_handler_thread(void *arg) {
             }
         } else if (bytes_received == 0) {
             printf("Cliente %d cerró la conexión.\n", client_fd);
+            enqueue_log("Cliente %d cerró la conexión.", client_fd);
             close(client_fd);
         } else {
             perror("Error al recibir datos del cliente");
+            enqueue_log("Error al recibir datos del cliente %d: %s", client_fd, strerror(errno));
             close(client_fd);
         }
     }
@@ -589,6 +588,7 @@ void *producer_handler_thread(void *arg) {
 
 int main() {
     printf("Iniciando broker...\n");
+    enqueue_log("Broker iniciado y escuchando en el puerto 8080");
     // Configurar manejadores de señales
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
