@@ -98,8 +98,35 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
+    ///*************************/
     printf("Conectado al broker\n");
+
+    // Enviar solicitud de suscripción con el formato esperado por el broker
+    char subscribe_message[128];
+    snprintf(subscribe_message, sizeof(subscribe_message), "SUBSCRIBE:%d:%s", consumer_id, topic);
+
+    if (write(sock, subscribe_message, strlen(subscribe_message)) != strlen(subscribe_message)) {
+        perror("Error al enviar solicitud de suscripción");
+        close(sock);
+        return 1;
+    }
+
+    printf("Enviada solicitud de suscripción: '%s'\n", subscribe_message);
+
+    printf("Suscrito al topic '%s'. Esperando mensajes...\n", topic);
+
+    // Crear thread para recibir mensajes
+    if (pthread_create(&receive_thread, NULL, receive_messages, &sock) != 0) {
+        perror("Error al crear thread de recepción");
+        close(sock);
+        return 1;
+    }
+
     
+    //***************************/
+
+
+    /*
     // Enviar tipo de cliente (2 = consumidor)
     int client_type = 2;
     if (write(sock, &client_type, sizeof(client_type)) != sizeof(client_type)) {
@@ -121,15 +148,22 @@ int main(int argc, char *argv[]) {
         close(sock);
         return 1;
     }
-    
+
+
     printf("Suscrito al topic '%s'. Esperando mensajes...\n", topic);
-    
-    // Crear thread para recibir mensajes
+
+     // Crear thread para recibir mensajes
     if (pthread_create(&receive_thread, NULL, receive_messages, &sock) != 0) {
         perror("Error al crear thread de recepción");
         close(sock);
         return 1;
     }
+        
+    */
+    
+    
+    
+   
     
     // Interfaz para comandos del usuario
     printf("\nComandos disponibles:\n");
@@ -149,6 +183,7 @@ int main(int argc, char *argv[]) {
             command[len-1] = '\0';
         }
         printf("Comando: %s\n", command);
+        // fflush(stdout);
         // Procesar comando
         if (strcmp(command, "quit") == 0) {
             running = 0;

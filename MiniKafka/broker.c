@@ -81,9 +81,12 @@ void *producer_handler_thread(void *arg);
 
 // Subscription functions
 void add_subscription(int consumer_id, int socket_fd, const char *topic) {
+    printf("Agregando suscripción antes del lock: consumidor %d, socket %d, topic %s\n", consumer_id, socket_fd, topic);
     pthread_mutex_lock(&subscription_mutex);
+    printf("Agregando suscripción en el lock: consumidor %d, socket %d, topic %s\n", consumer_id, socket_fd, topic);
     int idx = -1;
     for (int i = 0; i < subscription_count; i++) {
+        printf("!!!!!!!!!!!Consumer %d, topic %s\n", subscriptions[i].consumer_id, subscriptions[i].topics[0]);
         if (subscriptions[i].consumer_id == consumer_id) {
             idx = i;
             break;
@@ -94,6 +97,7 @@ void add_subscription(int consumer_id, int socket_fd, const char *topic) {
         subscriptions[idx].consumer_id = consumer_id;
         subscriptions[idx].socket_fd = socket_fd;
         subscriptions[idx].topic_count = 0;
+        printf("Nueva suscripción: consumidor %d, socket %d, topic %s\n", consumer_id, socket_fd, topic);
     }
     if (idx != -1 && subscriptions[idx].topic_count < 10) {
         for (int i = 0; i < subscriptions[idx].topic_count; i++) {
@@ -108,6 +112,7 @@ void add_subscription(int consumer_id, int socket_fd, const char *topic) {
         enqueue_log(log_buffer);
     }
     pthread_mutex_unlock(&subscription_mutex);
+    printf("Agregando suscripción después del unlock: consumidor %d, socket %d, topic %s\n", consumer_id, socket_fd, topic);
 }
 
 void remove_subscription(int consumer_id, const char *topic) {
@@ -132,10 +137,14 @@ void remove_subscription(int consumer_id, const char *topic) {
     pthread_mutex_unlock(&subscription_mutex);
 }
 
+// Function to distribute messages to subscribed consumers
 void distribute_message(const Message *msg) {
     pthread_mutex_lock(&subscription_mutex);
+    printf("Distributing message: Producer %d, Topic '%s', Payload '%s'\n", msg->producer_id, msg->topic, msg->payload);
     for (int i = 0; i < subscription_count; i++) {
+        printf("Consumer %d has %d subscriptions:\n", subscriptions[i].consumer_id, subscriptions[i].topic_count);
         for (int j = 0; j < subscriptions[i].topic_count; j++) {
+            printf("  - '%s'\n", subscriptions[i].topics[j]);
             if (strcmp(subscriptions[i].topics[j], msg->topic) == 0) {
                 if (write(subscriptions[i].socket_fd, msg, sizeof(Message)) < 0) {
                     char log_buffer[256];
@@ -468,10 +477,10 @@ void *connection_handler_thread(void *arg) {
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
     int client_fd;
-    
+
     // En el thread de conexiones, configura un timeout para el socket
     struct timeval timeout;
-    timeout.tv_sec = 1;  // 1 segundo de timeout
+    timeout.tv_sec = 10;
     timeout.tv_usec = 0;
     setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -481,42 +490,99 @@ void *connection_handler_thread(void *arg) {
         client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
         printf("accept despues...\n");
         if (client_fd < 0) {
-            if (errno == EINTR) continue; // Interrupted by signal
+            if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Timeout - esto es normal, continuar el bucle
                 printf("accept timeout, continuando...\n");
                 continue;
             }
             perror("accept failed");
             break;
         }
-        printf("accept despuesDOS...\n");
+        printf("Cliente conectado con FD: %d\n", client_fd);
 
-        // El resto del código sigue igual...
+        // Leer los primeros bytes para determinar si es productor o consumidor (y su acción)
+        char buffer[128];
+        ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+        if (bytes_received > 0) {
+            buffer[bytes_received] = '\0';
+            printf("Datos recibidos del cliente %d: '%s'\n", client_fd, buffer);
+
+            // Procesar mensaje de suscripción
+            if (strncmp(buffer, "SUBSCRIBE:", 10) == 0) {
+                int consumer_id;
+                char topic[64];
+                if (sscanf(buffer, "SUBSCRIBE:%d:%63s", &consumer_id, topic) == 2) {
+                    add_subscription(consumer_id, client_fd, topic);
+                    printf("Llamando a add_subscription para el consumidor %d, topic '%s'\n", consumer_id, topic);
+                    // No creamos un hilo de productor para un consumidor que solo se suscribe
+                    continue; // Volver a esperar más conexiones
+                } else {
+                    fprintf(stderr, "Formato de suscripción incorrecto del cliente %d: '%s'\n", client_fd, buffer);
+                    close(client_fd);
+                    continue;
+                }
+            } else {
+                // Asumir que es un productor enviando un mensaje
+                pthread_t producer_thread;
+                int *client_socket_ptr = malloc(sizeof(int));
+                if (client_socket_ptr == NULL) {
+                    perror("Error al asignar memoria para el socket del cliente");
+                    close(client_fd);
+                    continue;
+                }
+                *client_socket_ptr = client_fd;
+                if (pthread_create(&producer_thread, NULL, producer_handler_thread, client_socket_ptr) != 0) {
+                    perror("Error al crear el hilo del productor");
+                    close(client_fd);
+                } else {
+                    printf("Hilo del productor creado para el cliente %d\n", client_fd);
+                    pthread_detach(producer_thread);
+                }
+            }
+        } else if (bytes_received == 0) {
+            printf("Cliente %d cerró la conexión.\n", client_fd);
+            close(client_fd);
+        } else {
+            perror("Error al recibir datos del cliente");
+            close(client_fd);
+        }
     }
     printf("Cerrando hilo de conexión\n");
-
     return NULL;
 }
 
+
 // Función para manejar un productor conectado
 void *producer_handler_thread(void *arg) {
+    printf("entrando al producer handler thread \n");
+
     int client_fd = *((int *)arg);
     free(arg);
-    
+
     Message msg;
     ssize_t bytes_read;
-    
+
     while (running) {
         bytes_read = read(client_fd, &msg, sizeof(Message));
         if (bytes_read <= 0) {
             break; // Conexión cerrada o error
         }
-        
+
+        if (bytes_read < 0) {
+            perror("Error al leer del socket");
+            break;
+        } else if (bytes_read == 0) {
+            break; // Conexión cerrada por el cliente
+        }
+
+        // Imprimir el mensaje recibido para verificar
+        printf("Mensaje recibido del productor %d, tema: %s, payload: %s\n",
+               msg.producer_id, msg.topic, msg.payload);
+
         // Encolar el mensaje recibido
         enqueue_message(msg.producer_id, msg.topic, msg.payload);
     }
-    
+
     close(client_fd);
     return NULL;
 }
