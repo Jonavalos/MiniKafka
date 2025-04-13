@@ -12,6 +12,7 @@
 
 // Message structure (debe coincidir con la definición en el broker)
 typedef struct {
+    long long id;
     int producer_id;
     char topic[64];
     char payload[MSG_PAYLOAD_SIZE];
@@ -111,12 +112,13 @@ int main(int argc, char *argv[]) {
         }
         
         // Preparar el mensaje
+        msg.id = 0; // Inicializar el ID
         msg.producer_id = producer_id;
         strncpy(msg.topic, topic, sizeof(msg.topic) - 1);
         msg.topic[sizeof(msg.topic) - 1] = '\0';
         strncpy(msg.payload, input, sizeof(msg.payload) - 1);
         msg.payload[sizeof(msg.payload) - 1] = '\0';
-        
+
         // Enviar el mensaje
         if (write(sock, &msg, sizeof(msg)) != sizeof(msg)) {
             perror("Error al enviar mensaje");
