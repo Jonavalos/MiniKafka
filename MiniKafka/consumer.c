@@ -22,9 +22,31 @@ typedef struct {
 #pragma pack(pop)
 
 
+//globales para el manejador de senales
 volatile sig_atomic_t running = 1;
+int sock = 0;
+int consumer_id;
+char topic[64];
+char group_id[64] = "";
+
+
+
+void send_unsubscribe_message() {
+    char unsubscribe_message[256];
+    snprintf(unsubscribe_message, sizeof(unsubscribe_message), 
+            "UNSUBSCRIBE:%d:%s", consumer_id, topic);
+    
+    if (write(sock, unsubscribe_message, strlen(unsubscribe_message)) != strlen(unsubscribe_message)) {
+        perror("Error al enviar solicitud de desuscripción");
+    } else {
+        printf("Enviada solicitud de desuscripción: '%s'\n", unsubscribe_message);
+    }
+}
+
 
 void signal_handler(int signum) {
+    printf("\nRecibida señal de interrupción, cerrando...\n");
+    send_unsubscribe_message();
     running = 0;
 }
 
@@ -60,12 +82,14 @@ void *receive_messages(void *arg) {
     return NULL;
 }
 
+
+
 // Add a flag to track if it's a new connection or reconnection
 int main(int argc, char *argv[]) {
-    int sock = 0;
+    //int sock = 0;
     struct sockaddr_in serv_addr;
-    int consumer_id;
-    char topic[64];
+    //int consumer_id;
+    //char topic[64];
     char group_id[64] = ""; // Initialize group_id to empty
     long long start_offset = -1; // -1 means start from latest messages
     pthread_t receive_thread;
@@ -169,35 +193,38 @@ int main(int argc, char *argv[]) {
 
 
     // Interfaz para comandos del usuario
-    printf("\nComandos disponibles:\n");
-    printf("  quit - Salir del consumidor\n");
+    // Interfaz para comandos del usuario
+printf("\nComandos disponibles:\n");
+printf("  quit - Salir del consumidor\n");
 
-    char command[64];
-    while (running) {
-        printf("> ");
-        if (fgets(command, sizeof(command), stdin) == NULL) {
-            if (errno == EINTR) continue; // Interrupción por señal
-            break;
-        }
-
-        // Eliminar el salto de línea
-        size_t len = strlen(command);
-        if (len > 0 && command[len-1] == '\n') {
-            command[len-1] = '\0';
-        }
-        printf("Comando: %s\n", command);
-        // fflush(stdout);
-        // Procesar comando
-        if (strcmp(command, "quit") == 0) {
-            running = 0;
-            break;
-        } else if (strlen(command) > 0) {
-            printf("Comando desconocido: %s\n", command);
-        }
+char command[64];
+while (running) {
+    printf("> ");
+    if (fgets(command, sizeof(command), stdin) == NULL) {
+        if (errno == EINTR) continue; // Interrupción por señal
+        break;
     }
+
+    // Eliminar el salto de línea
+    size_t len = strlen(command);
+    if (len > 0 && command[len-1] == '\n') {
+        command[len-1] = '\0';
+    }
+
+    // Procesar comando
+    if (strcmp(command, "quit") == 0) {
+        send_unsubscribe_message();
+        running = 0;
+        break;
+    } else if (strlen(command) > 0) {
+        printf("Comando desconocido: %s\n", command);
+    }
+        
+}
 
     // Esperar a que el thread termine
     running = 0;
+    pthread_cancel(receive_thread);  // Forzar termino del thread si está bloqueado en read()
     pthread_join(receive_thread, NULL);
 
     printf("Finalizando consumidor...\n");

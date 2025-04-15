@@ -939,7 +939,33 @@ void *connection_handler_thread(void *arg) {
                 char confirm_msg[100];
                 sprintf(confirm_msg, "SUBSCRIBED:%d:%s:%s", consumer_id, topic, group_id);
                 write(client_fd, confirm_msg, strlen(confirm_msg));
-            } else {
+            } else if (strncmp(buffer, "UNSUBSCRIBE:", 12) == 0) {
+                int consumer_id;
+                char topic[64] = "";
+                
+                // Parse the unsubscribe message
+                int matches = sscanf(buffer, "UNSUBSCRIBE:%d:%63s", &consumer_id, topic);
+                
+                if (matches == 2) {
+                    printf("Removing subscription for consumer %d from topic '%s'\n", consumer_id, topic);
+                    enqueue_log("Removing subscription for consumer %d from topic '%s'", consumer_id, topic);
+                    
+                    // Remove the subscription
+                    remove_subscription(consumer_id, topic);
+                    
+                    // Send confirmation back to consumer
+                    char confirm_msg[100];
+                    sprintf(confirm_msg, "UNSUBSCRIBED:%d:%s", consumer_id, topic);
+                    write(client_fd, confirm_msg, strlen(confirm_msg));
+                    
+                    // Close the connection
+                    close(client_fd);
+                } else {
+                    fprintf(stderr, "Invalid unsubscription format from client %d: '%s'\n", 
+                           client_fd, buffer);
+                    close(client_fd);
+                }
+            }else {
                 // Assume it's a producer
                 pthread_t producer_thread;
                 int *client_socket_ptr = malloc(sizeof(int));
