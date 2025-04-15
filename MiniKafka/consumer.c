@@ -12,12 +12,15 @@
 #define MSG_PAYLOAD_SIZE 256
 
 // Message structure (debe coincidir con la definición en el broker)
+#pragma pack(push, 1)
 typedef struct {
-    long long id;
+    long long id; // Message offset
     int producer_id;
     char topic[64];
-    char payload[MSG_PAYLOAD_SIZE];
+    char payload[256];
 } Message;
+#pragma pack(pop)
+
 
 volatile sig_atomic_t running = 1;
 
@@ -32,7 +35,9 @@ void *receive_messages(void *arg) {
 
     while (running) {
         // Recibir mensaje
+        memset(&msg, 0, sizeof(msg));
         ssize_t bytes_read = read(sock, &msg, sizeof(msg));
+
 
         if (bytes_read <= 0) {
             if (errno == EINTR) continue; // Interrupción por señal
@@ -48,42 +53,65 @@ void *receive_messages(void *arg) {
         // Mostrar el mensaje recibido
         printf("\n[Recibido de productor %d en topic '%s']: %s\n> ",
                msg.producer_id, msg.topic, msg.payload);
+        memset(&msg, 0, sizeof(msg));
         fflush(stdout);
     }
 
     return NULL;
 }
 
+// Add a flag to track if it's a new connection or reconnection
 int main(int argc, char *argv[]) {
     int sock = 0;
     struct sockaddr_in serv_addr;
     int consumer_id;
     char topic[64];
-    char group_id[64] = ""; // Inicializar group_id a vacío
+    char group_id[64] = ""; // Initialize group_id to empty
+    long long start_offset = -1; // -1 means start from latest messages
     pthread_t receive_thread;
-
-    // Configurar manejador de señales
+    
+    // Configure signal handler
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-
-    // Verificar argumentos
+    
+    // Verify arguments
     if (argc < 3) {
-        printf("Uso: %s <consumer_id> <topic> [group_id]\n", argv[0]);
-        printf("  [group_id] es opcional.\n");
+        printf("Usage: %s <consumer_id> <topic> [group_id] [start_offset]\n", argv[0]);
+        printf("  [group_id] is optional - consumer group for load balancing\n");
+        printf("  [start_offset] is optional - start consuming from this message ID\n");
+        printf("    -1 = latest messages only\n");
+        printf("     0 = all available messages (from beginning)\n");
+        printf("     n = specific message ID\n");
         return 1;
     }
-
+    
     consumer_id = atoi(argv[1]);
     strncpy(topic, argv[2], sizeof(topic) - 1);
     topic[sizeof(topic) - 1] = '\0';
-
-    // Leer el group_id si se proporciona
+    
+    // Read the group_id if provided
     if (argc > 3) {
         strncpy(group_id, argv[3], sizeof(group_id) - 1);
         group_id[sizeof(group_id) - 1] = '\0';
-        printf("Consumidor %d iniciado para el topic '%s' en el grupo '%s'\n", consumer_id, topic, group_id);
+    }
+    
+    // Read the start_offset if provided
+    if (argc > 4) {
+        start_offset = atoll(argv[4]);
+    }
+    
+    if (strlen(group_id) > 0) {
+        printf("Consumer %d started for topic '%s' in group '%s'", 
+               consumer_id, topic, group_id);
     } else {
-        printf("Consumidor %d iniciado para el topic '%s' (sin grupo)\n", consumer_id, topic);
+        printf("Consumer %d started for topic '%s' (no group)", 
+               consumer_id, topic);
+    }
+    
+    if (start_offset >= 0) {
+        printf(" starting from offset %lld\n", start_offset);
+    } else {
+        printf(" starting from latest messages\n");
     }
 
     // Crear socket
@@ -112,9 +140,16 @@ int main(int argc, char *argv[]) {
     printf("Conectado al broker\n");
 
     // Enviar solicitud de suscripción con el formato esperado por el broker
-    char subscribe_message[192]; // Aumentar el tamaño para el group_id
-    snprintf(subscribe_message, sizeof(subscribe_message), "SUBSCRIBE:%d:%s:%s", consumer_id, topic, group_id);
-
+    char subscribe_message[256]; // Increase size for offset
+    
+    if (start_offset >= 0) {
+        snprintf(subscribe_message, sizeof(subscribe_message), 
+                "SUBSCRIBE:%d:%s:%s:%lld", consumer_id, topic, group_id, start_offset);
+    } else {
+        snprintf(subscribe_message, sizeof(subscribe_message), 
+                "SUBSCRIBE:%d:%s:%s", consumer_id, topic, group_id);
+    }
+    
     if (write(sock, subscribe_message, strlen(subscribe_message)) != strlen(subscribe_message)) {
         perror("Error al enviar solicitud de suscripción");
         close(sock);

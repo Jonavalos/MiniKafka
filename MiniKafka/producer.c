@@ -11,12 +11,15 @@
 #define MSG_PAYLOAD_SIZE 256
 
 // Message structure (debe coincidir con la definición en el broker)
+#pragma pack(push, 1)
 typedef struct {
     long long id;
     int producer_id;
     char topic[64];
-    char payload[MSG_PAYLOAD_SIZE];
+    char payload[256];
 } Message;
+#pragma pack(pop)
+
 
 volatile sig_atomic_t running = 1;
 
