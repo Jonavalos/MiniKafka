@@ -39,7 +39,7 @@ void send_unsubscribe_message() {
     if (write(sock, unsubscribe_message, strlen(unsubscribe_message)) != strlen(unsubscribe_message)) {
         perror("Error al enviar solicitud de desuscripción");
     } else {
-        printf("Enviada solicitud de desuscripción: '%s'\n", unsubscribe_message);
+        printf("Enviada solicitud de desuscripciónnn: '%s'\n", unsubscribe_message);
     }
 }
 

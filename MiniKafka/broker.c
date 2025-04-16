@@ -229,16 +229,29 @@ void add_subscription(int consumer_id, int socket_fd, const char *topic, const c
 }
 
 void remove_subscription(int consumer_id, const char *topic) {
+    // Primero, eliminar la suscripción individual en el arreglo subscriptions
     pthread_mutex_lock(&subscription_mutex);
     for (int i = 0; i < subscription_count; i++) {
         if (subscriptions[i].consumer_id == consumer_id) {
             for (int j = 0; j < subscriptions[i].topic_count; j++) {
                 if (strcmp(subscriptions[i].topics[j], topic) == 0) {
+                    // Reemplazar el topic eliminado por el último para evitar huecos
                     if (j < subscriptions[i].topic_count - 1) {
                         strcpy(subscriptions[i].topics[j], subscriptions[i].topics[subscriptions[i].topic_count - 1]);
                     }
                     subscriptions[i].topic_count--;
+                    printf("DEBUG: Antes de encolar log para consumer %d en topic %s\n", consumer_id, topic);
                     enqueue_log("Consumidor %d canceló su suscripción al topic '%s'", consumer_id, topic);
+                    printf("DEBUG: Después de encolar log\n");
+                    
+                    // Si el consumidor ya no tiene ningún topic suscrito, eliminar su registro completo
+                    if (subscriptions[i].topic_count == 0) {
+                        // Desplazar el arreglo para eliminar el registro vacío
+                        for (int k = i; k < subscription_count - 1; k++) {
+                            subscriptions[k] = subscriptions[k + 1];
+                        }
+                        subscription_count--;
+                    }
                     break;
                 }
             }
@@ -246,6 +259,21 @@ void remove_subscription(int consumer_id, const char *topic) {
         }
     }
     pthread_mutex_unlock(&subscription_mutex);
+
+    // Ahora, eliminar al consumidor del arreglo group_members si corresponde
+    pthread_mutex_lock(&group_members_mutex);
+    for (int i = 0; i < num_group_members; i++) {
+        if (group_members[i].consumer_id == consumer_id && strcmp(group_members[i].topic, topic) == 0) {
+            // Se elimina el miembro reemplazándolo con el último
+            if (i < num_group_members - 1) {
+                group_members[i] = group_members[num_group_members - 1];
+            }
+            num_group_members--;
+            enqueue_log("Consumidor %d removido del grupo con topic '%s'", consumer_id, topic);
+            break;
+        }
+    }
+    pthread_mutex_unlock(&group_members_mutex);
 }
 
 
@@ -324,6 +352,8 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
            selected_consumer, selected_socket, current_index, member_count);
     enqueue_log("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)",
                 selected_consumer, selected_socket, current_index, member_count);
+        printf("DEBUG: Se acaba de encolar un mensaje para la cola de logs para el consumidor %d\n",
+           selected_consumer);
 
     pthread_mutex_unlock(&group_distribution_state_mutex);
     pthread_mutex_unlock(&group_members_mutex);
@@ -399,10 +429,12 @@ void distribute_message(const char *topic, const char *group_id, const char *mes
         enqueue_log("WARNING: No se pudo encontrar consumidor para el mensaje en el grupo '%s', tópico '%s'", group_id, topic);
         return;
     }
-
+    printf("DEBUG: Socket del consumidor seleccionado: %d\n", consumer_socket);
     char full_message[MAX_MESSAGE_LENGTH];
+    printf("Se va a enviar el mensaje al socket %d\n", consumer_socket);
     snprintf(full_message, sizeof(full_message), "[%s][%s]: %s", topic, group_id, message);
     ssize_t bytes_sent = send(consumer_socket, full_message, strlen(full_message), 0);
+    printf("Se acaba de enviar el mensaje al socket %d\n", consumer_socket);
     if (bytes_sent == -1) {
         perror("send");
         printf("ERROR: Falló el envío del mensaje al socket %d\n", consumer_socket);
@@ -412,6 +444,7 @@ void distribute_message(const char *topic, const char *group_id, const char *mes
         printf("DEBUG: Mensaje enviado a socket %d: %s\n", consumer_socket, full_message);
         enqueue_log("DEBUG: Mensaje enviado a socket %d: %s", consumer_socket, full_message);
     }
+    printf("Se ha enviado el mensaje al socket %d\n", consumer_socket);
 }
 
 
@@ -939,7 +972,10 @@ void *connection_handler_thread(void *arg) {
                 char confirm_msg[100];
                 sprintf(confirm_msg, "SUBSCRIBED:%d:%s:%s", consumer_id, topic, group_id);
                 write(client_fd, confirm_msg, strlen(confirm_msg));
-            } else if (strncmp(buffer, "UNSUBSCRIBE:", 12) == 0) {
+            } 
+            printf("Unsubscribe request from client\n");
+            else if (strncmp(buffer, "UNSUBSCRIBE:", 12) == 0) {
+                printf("Unsubscribe request from client\n");
                 int consumer_id;
                 char topic[64] = "";
                 
@@ -951,6 +987,7 @@ void *connection_handler_thread(void *arg) {
                     enqueue_log("Removing subscription for consumer %d from topic '%s'", consumer_id, topic);
                     
                     // Remove the subscription
+                    printf("Removing subscription for consumer %d from topic '%s'\n", consumer_id, topic);
                     remove_subscription(consumer_id, topic);
                     
                     // Send confirmation back to consumer
