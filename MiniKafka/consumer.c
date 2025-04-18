@@ -32,15 +32,10 @@ char group_id[64] = "";
 
 
 void send_unsubscribe_message() {
-    char unsubscribe_message[256];
-    snprintf(unsubscribe_message, sizeof(unsubscribe_message), 
-            "UNSUBSCRIBE:%d:%s", consumer_id, topic);
-    
-    if (write(sock, unsubscribe_message, strlen(unsubscribe_message)) != strlen(unsubscribe_message)) {
-        perror("Error al enviar solicitud de desuscripción");
-    } else {
-        printf("Enviada solicitud de desuscripciónnn: '%s'\n", unsubscribe_message);
-    }
+    struct linger so_linger = { .l_onoff = 1, .l_linger = 0 };
+    setsockopt(sock, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+    close(sock);
+    printf("Desconectando del broker... ILUSION DE UNSUBSCRIBE????\n");
 }
 
 
@@ -58,23 +53,28 @@ void *receive_messages(void *arg) {
     while (running) {
         // Recibir mensaje
         memset(&msg, 0, sizeof(msg));
-        ssize_t bytes_read = read(sock, &msg, sizeof(msg));
+        // ssize_t bytes_read = read(sock, &msg, sizeof(msg));
 
 
-        if (bytes_read <= 0) {
-            if (errno == EINTR) continue; // Interrupción por señal
-            if (bytes_read == 0) {
-                printf("Broker cerró la conexión\n");
-            } else {
-                perror("Error al recibir mensaje");
-            }
-            running = 0;
-            break;
-        }
+        // if (bytes_read <= 0) {
+        //     if (errno == EINTR) continue; // Interrupción por señal
+        //     if (bytes_read == 0) {
+        //         printf("Broker cerró la conexión\n");
+        //     } else {
+        //         perror("Error al recibir mensaje");
+        //     }
+        //     running = 0;
+        //     break;
+        // }
 
         // Mostrar el mensaje recibido
-        printf("\n[Recibido de productor %d en topic '%s']: %s\n> ",
-               msg.producer_id, msg.topic, msg.payload);
+        char buf[512];
+        ssize_t n = read(sock, buf, sizeof(buf)-1);
+        if (n > 0) {
+            buf[n] = '\0';
+            printf("Recibido: %s\n", buf);
+        }
+
         memset(&msg, 0, sizeof(msg));
         fflush(stdout);
     }

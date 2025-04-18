@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <stdarg.h>
+#include <poll.h>
 
 #define LOG_MSG_SIZE 256
 #define LOG_QUEUE_CAPACITY 100
@@ -419,11 +420,29 @@ int get_next_consumer_in_group_debug(const char *topic, const char *group_id) {
     return selected_socket;
 }
 
+// Helper: busca el consumer_id a partir del socket y el topic/grupo
+static int find_consumer_id_by_socket(int sock, const char *topic, const char *group_id) {
+    int cid = -1;
+    pthread_mutex_lock(&group_members_mutex);
+    for (int i = 0; i < num_group_members; i++) {
+        if (group_members[i].socket_fd == sock
+         && strcmp(group_members[i].topic, topic) == 0
+         && strcmp(group_members[i].group_id, group_id) == 0) {
+            cid = group_members[i].consumer_id;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&group_members_mutex);
+    return cid;
+}
+
+
 void distribute_message(const char *topic, const char *group_id, const char *message) {
     printf("DEBUG: Intentando distribuir mensaje para tópico '%s', grupo '%s'\n", topic, group_id);
     enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s', grupo '%s'", topic, group_id);
 
     int consumer_socket = get_next_consumer_in_group(topic, group_id);
+    if (consumer_socket < 0) return;
     if (consumer_socket == -1) {
         printf("WARNING: No se pudo encontrar consumidor para el mensaje en el grupo '%s', tópico '%s'\n", group_id, topic);
         enqueue_log("WARNING: No se pudo encontrar consumidor para el mensaje en el grupo '%s', tópico '%s'", group_id, topic);
@@ -433,13 +452,32 @@ void distribute_message(const char *topic, const char *group_id, const char *mes
     char full_message[MAX_MESSAGE_LENGTH];
     printf("Se va a enviar el mensaje al socket %d\n", consumer_socket);
     snprintf(full_message, sizeof(full_message), "[%s][%s]: %s", topic, group_id, message);
-    ssize_t bytes_sent = send(consumer_socket, full_message, strlen(full_message), 0);
+
+    // Antes de enviar, chequea POLLHUP
+    struct pollfd p = { .fd = consumer_socket, .events = POLLIN|POLLHUP };
+    if (poll(&p, 1, 0) > 0 && (p.revents & POLLHUP)) {
+        int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+        if (cid >= 0) remove_subscription(cid, topic);
+        close(consumer_socket); //aaa
+        return;
+    }
+
+    ssize_t bytes_sent = send(consumer_socket, message, strlen(message), MSG_NOSIGNAL);
     printf("Se acaba de enviar el mensaje al socket %d\n", consumer_socket);
+    printf("DEBUG MIEDO: bytes_sent = %zd\n", bytes_sent);
+    if (bytes_sent <= 0) {
+        // fallo o peer disparó RST
+        int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+        if (cid >= 0) remove_subscription(cid, topic);
+        close(consumer_socket);
+        return;
+    }
+
     if (bytes_sent == -1) {
         perror("send");
         printf("ERROR: Falló el envío del mensaje al socket %d\n", consumer_socket);
         enqueue_log("ERROR: Falló el envío del mensaje al socket %d", consumer_socket);
-        // Opcional: marcar este socket como inválido en group_members
+                // Opcional: marcar este socket como inválido en group_members
     } else {
         printf("DEBUG: Mensaje enviado a socket %d: %s\n", consumer_socket, full_message);
         enqueue_log("DEBUG: Mensaje enviado a socket %d: %s", consumer_socket, full_message);
@@ -973,7 +1011,6 @@ void *connection_handler_thread(void *arg) {
                 sprintf(confirm_msg, "SUBSCRIBED:%d:%s:%s", consumer_id, topic, group_id);
                 write(client_fd, confirm_msg, strlen(confirm_msg));
             } 
-            printf("Unsubscribe request from client\n");
             else if (strncmp(buffer, "UNSUBSCRIBE:", 12) == 0) {
                 printf("Unsubscribe request from client\n");
                 int consumer_id;
