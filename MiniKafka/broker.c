@@ -363,62 +363,62 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
 }
 
 
-int get_next_consumer_in_group_debug(const char *topic, const char *group_id) {
-    printf("DEBUG: get_next_consumer_in_group called for topic '%s', group '%s'\n", topic, group_id);
-    enqueue_log("DEBUG: get_next_consumer_in_group called for topic '%s', group '%s'", topic, group_id);
+// int get_next_consumer_in_group_debug(const char *topic, const char *group_id) {
+//     printf("DEBUG: get_next_consumer_in_group called for topic '%s', group '%s'\n", topic, group_id);
+//     enqueue_log("DEBUG: get_next_consumer_in_group called for topic '%s', group '%s'", topic, group_id);
     
-    // Manual search through all group members - bypassing state tracking for now
-    int matching_members[MAX_GROUP_MEMBERS];
-    int matching_sockets[MAX_GROUP_MEMBERS];
-    int count = 0;
+//     // Manual search through all group members - bypassing state tracking for now
+//     int matching_members[MAX_GROUP_MEMBERS];
+//     int matching_sockets[MAX_GROUP_MEMBERS];
+//     int count = 0;
     
-    // Collect all members that match this topic and group
-    printf("DEBUG: Searching through %d total group members\n", num_group_members);
-    enqueue_log("DEBUG: Searching through %d total group members", num_group_members);
+//     // Collect all members that match this topic and group
+//     printf("DEBUG: Searching through %d total group members\n", num_group_members);
+//     enqueue_log("DEBUG: Searching through %d total group members", num_group_members);
     
-    for (int i = 0; i < num_group_members; i++) {
-        printf("DEBUG: Checking member %d: topic='%s', group='%s', socket=%d\n", 
-               i, group_members[i].topic, group_members[i].group_id, group_members[i].socket_fd);
+//     for (int i = 0; i < num_group_members; i++) {
+//         printf("DEBUG: Checking member %d: topic='%s', group='%s', socket=%d\n", 
+//                i, group_members[i].topic, group_members[i].group_id, group_members[i].socket_fd);
         
-        if (strcmp(group_members[i].topic, topic) == 0 && 
-            strcmp(group_members[i].group_id, group_id) == 0) {
+//         if (strcmp(group_members[i].topic, topic) == 0 && 
+//             strcmp(group_members[i].group_id, group_id) == 0) {
             
-            matching_members[count] = group_members[i].consumer_id;
-            matching_sockets[count] = group_members[i].socket_fd;
-            count++;
+//             matching_members[count] = group_members[i].consumer_id;
+//             matching_sockets[count] = group_members[i].socket_fd;
+//             count++;
             
-            printf("DEBUG: Found matching member: consumer_id=%d, socket=%d\n", 
-                   group_members[i].consumer_id, group_members[i].socket_fd);
-            enqueue_log("DEBUG: Found matching member: consumer_id=%d, socket=%d", 
-                       group_members[i].consumer_id, group_members[i].socket_fd);
-        }
-    }
+//             printf("DEBUG: Found matching member: consumer_id=%d, socket=%d\n", 
+//                    group_members[i].consumer_id, group_members[i].socket_fd);
+//             enqueue_log("DEBUG: Found matching member: consumer_id=%d, socket=%d", 
+//                        group_members[i].consumer_id, group_members[i].socket_fd);
+//         }
+//     }
     
-    printf("DEBUG: Found %d matching members for topic '%s', group '%s'\n", 
-           count, topic, group_id);
-    enqueue_log("DEBUG: Found %d matching members for topic '%s', group '%s'", 
-               count, topic, group_id);
+//     printf("DEBUG: Found %d matching members for topic '%s', group '%s'\n", 
+//            count, topic, group_id);
+//     enqueue_log("DEBUG: Found %d matching members for topic '%s', group '%s'", 
+//                count, topic, group_id);
     
-    if (count == 0) {
-        printf("DEBUG: No matching members found, returning -1\n");
-        enqueue_log("DEBUG: No matching members found, returning -1");
-        return -1;
-    }
+//     if (count == 0) {
+//         printf("DEBUG: No matching members found, returning -1\n");
+//         enqueue_log("DEBUG: No matching members found, returning -1");
+//         return -1;
+//     }
     
-    // Simple round-robin: use the message counter as index
-    static int counter = 0;
-    int selected_index = counter % count;
-    counter++;
+//     // Simple round-robin: use the message counter as index
+//     static int counter = 0;
+//     int selected_index = counter % count;
+//     counter++;
     
-    int selected_socket = matching_sockets[selected_index];
+//     int selected_socket = matching_sockets[selected_index];
     
-    printf("DEBUG: Selected socket %d (member index %d of %d)\n", 
-           selected_socket, selected_index, count);
-    enqueue_log("DEBUG: Selected socket %d (member index %d of %d)", 
-               selected_socket, selected_index, count);
+//     printf("DEBUG: Selected socket %d (member index %d of %d)\n", 
+//            selected_socket, selected_index, count);
+//     enqueue_log("DEBUG: Selected socket %d (member index %d of %d)", 
+//                selected_socket, selected_index, count);
     
-    return selected_socket;
-}
+//     return selected_socket;
+// }
 
 // Helper: busca el consumer_id a partir del socket y el topic/grupo
 static int find_consumer_id_by_socket(int sock, const char *topic, const char *group_id) {
@@ -495,129 +495,129 @@ void distribute_message(const char *topic, const char *group_id, const char *mes
 
 
 
-void distribute_message_debug(const Message *msg) {
-    printf("DEBUG: distribute_message_debug called for message ID %lld, topic '%s'\n", 
-           msg->id, msg->topic);
-    enqueue_log("DEBUG: distribute_message_debug called for message ID %lld, topic '%s'", 
-               msg->id, msg->topic);
+// void distribute_message_debug(const Message *msg) {
+//     printf("DEBUG: distribute_message_debug called for message ID %lld, topic '%s'\n", 
+//            msg->id, msg->topic);
+//     enqueue_log("DEBUG: distribute_message_debug called for message ID %lld, topic '%s'", 
+//                msg->id, msg->topic);
     
-    // First, find all unique groups for this topic
-    char unique_groups[100][64];
-    int unique_group_count = 0;
+//     // First, find all unique groups for this topic
+//     char unique_groups[100][64];
+//     int unique_group_count = 0;
     
-    printf("DEBUG: Looking for groups with topic '%s' in %d total members\n", 
-           msg->topic, num_group_members);
-    enqueue_log("DEBUG: Looking for groups with topic '%s' in %d total members", 
-               msg->topic, num_group_members);
+//     printf("DEBUG: Looking for groups with topic '%s' in %d total members\n", 
+//            msg->topic, num_group_members);
+//     enqueue_log("DEBUG: Looking for groups with topic '%s' in %d total members", 
+//                msg->topic, num_group_members);
     
-    for (int i = 0; i < num_group_members; i++) {
-        if (strcmp(group_members[i].topic, msg->topic) == 0) {
-            // Check if we already found this group
-            bool found = false;
-            for (int j = 0; j < unique_group_count; j++) {
-                if (strcmp(unique_groups[j], group_members[i].group_id) == 0) {
-                    found = true;
-                    break;
-                }
-            }
+//     for (int i = 0; i < num_group_members; i++) {
+//         if (strcmp(group_members[i].topic, msg->topic) == 0) {
+//             // Check if we already found this group
+//             bool found = false;
+//             for (int j = 0; j < unique_group_count; j++) {
+//                 if (strcmp(unique_groups[j], group_members[i].group_id) == 0) {
+//                     found = true;
+//                     break;
+//                 }
+//             }
             
-            if (!found) {
-                strcpy(unique_groups[unique_group_count], group_members[i].group_id);
-                unique_group_count++;
-                printf("DEBUG: Found unique group '%s' for topic '%s'\n", 
-                       group_members[i].group_id, msg->topic);
-                enqueue_log("DEBUG: Found unique group '%s' for topic '%s'", 
-                           group_members[i].group_id, msg->topic);
-            }
-        }
-    }
+//             if (!found) {
+//                 strcpy(unique_groups[unique_group_count], group_members[i].group_id);
+//                 unique_group_count++;
+//                 printf("DEBUG: Found unique group '%s' for topic '%s'\n", 
+//                        group_members[i].group_id, msg->topic);
+//                 enqueue_log("DEBUG: Found unique group '%s' for topic '%s'", 
+//                            group_members[i].group_id, msg->topic);
+//             }
+//         }
+//     }
     
-    printf("DEBUG: Found %d unique groups for topic '%s'\n", unique_group_count, msg->topic);
-    enqueue_log("DEBUG: Found %d unique groups for topic '%s'", unique_group_count, msg->topic);
+//     printf("DEBUG: Found %d unique groups for topic '%s'\n", unique_group_count, msg->topic);
+//     enqueue_log("DEBUG: Found %d unique groups for topic '%s'", unique_group_count, msg->topic);
     
-    // For each unique group, select a consumer and send the message
-    for (int i = 0; i < unique_group_count; i++) {
-        int socket_fd = get_next_consumer_in_group_debug(msg->topic, unique_groups[i]);
+//     // For each unique group, select a consumer and send the message
+//     for (int i = 0; i < unique_group_count; i++) {
+//         int socket_fd = get_next_consumer_in_group_debug(msg->topic, unique_groups[i]);
         
-        printf("DEBUG: Selected socket %d for group '%s'\n", socket_fd, unique_groups[i]);
-        enqueue_log("DEBUG: Selected socket %d for group '%s'", socket_fd, unique_groups[i]);
+//         printf("DEBUG: Selected socket %d for group '%s'\n", socket_fd, unique_groups[i]);
+//         enqueue_log("DEBUG: Selected socket %d for group '%s'", socket_fd, unique_groups[i]);
         
-        if (socket_fd > 0) {
-            // Check socket status
-            int error = 0;
-            socklen_t len = sizeof(error);
-            if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &error, &len) < 0 || error != 0) {
-                printf("DEBUG: Socket %d is in error state: %s\n", socket_fd, strerror(error));
-                enqueue_log("DEBUG: Socket %d is in error state: %s", socket_fd, strerror(error));
-                continue;
-            }
+//         if (socket_fd > 0) {
+//             // Check socket status
+//             int error = 0;
+//             socklen_t len = sizeof(error);
+//             if (getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &error, &len) < 0 || error != 0) {
+//                 printf("DEBUG: Socket %d is in error state: %s\n", socket_fd, strerror(error));
+//                 enqueue_log("DEBUG: Socket %d is in error state: %s", socket_fd, strerror(error));
+//                 continue;
+//             }
             
-            // Try to send the message
-            printf("DEBUG: Attempting to write %zu bytes to socket %d\n", sizeof(Message), socket_fd);
-            enqueue_log("DEBUG: Attempting to write %zu bytes to socket %d", sizeof(Message), socket_fd);
+//             // Try to send the message
+//             printf("DEBUG: Attempting to write %zu bytes to socket %d\n", sizeof(Message), socket_fd);
+//             enqueue_log("DEBUG: Attempting to write %zu bytes to socket %d", sizeof(Message), socket_fd);
             
-            ssize_t bytes_written = write(socket_fd, msg, sizeof(Message));
+//             ssize_t bytes_written = write(socket_fd, msg, sizeof(Message));
             
-            if (bytes_written < 0) {
-                printf("DEBUG: Failed to write to socket %d: %s\n", socket_fd, strerror(errno));
-                enqueue_log("DEBUG: Failed to write to socket %d: %s", socket_fd, strerror(errno));
-            } else {
-                printf("DEBUG: Successfully wrote %zd bytes to socket %d\n", bytes_written, socket_fd);
-                enqueue_log("DEBUG: Successfully wrote %zd bytes to socket %d", bytes_written, socket_fd);
-            }
-        } else {
-            printf("DEBUG: No valid socket found for group '%s'\n", unique_groups[i]);
-            enqueue_log("DEBUG: No valid socket found for group '%s'", unique_groups[i]);
-        }
-    }
+//             if (bytes_written < 0) {
+//                 printf("DEBUG: Failed to write to socket %d: %s\n", socket_fd, strerror(errno));
+//                 enqueue_log("DEBUG: Failed to write to socket %d: %s", socket_fd, strerror(errno));
+//             } else {
+//                 printf("DEBUG: Successfully wrote %zd bytes to socket %d\n", bytes_written, socket_fd);
+//                 enqueue_log("DEBUG: Successfully wrote %zd bytes to socket %d", bytes_written, socket_fd);
+//             }
+//         } else {
+//             printf("DEBUG: No valid socket found for group '%s'\n", unique_groups[i]);
+//             enqueue_log("DEBUG: No valid socket found for group '%s'", unique_groups[i]);
+//         }
+//     }
     
-    // Handle individual subscribers not in groups
-    printf("DEBUG: Checking individual subscribers for topic '%s'\n", msg->topic);
-    enqueue_log("DEBUG: Checking individual subscribers for topic '%s'", msg->topic);
+//     // Handle individual subscribers not in groups
+//     printf("DEBUG: Checking individual subscribers for topic '%s'\n", msg->topic);
+//     enqueue_log("DEBUG: Checking individual subscribers for topic '%s'", msg->topic);
     
-    int individual_count = 0;
-    for (int i = 0; i < subscription_count; i++) {
-        for (int j = 0; j < subscriptions[i].topic_count; j++) {
-            if (strcmp(subscriptions[i].topics[j], msg->topic) == 0) {
-                // Check if this consumer is in a group for this topic
-                bool in_group = false;
-                for (int k = 0; k < num_group_members; k++) {
-                    if (subscriptions[i].consumer_id == group_members[k].consumer_id &&
-                        strcmp(msg->topic, group_members[k].topic) == 0) {
-                        in_group = true;
-                        break;
-                    }
-                }
+//     int individual_count = 0;
+//     for (int i = 0; i < subscription_count; i++) {
+//         for (int j = 0; j < subscriptions[i].topic_count; j++) {
+//             if (strcmp(subscriptions[i].topics[j], msg->topic) == 0) {
+//                 // Check if this consumer is in a group for this topic
+//                 bool in_group = false;
+//                 for (int k = 0; k < num_group_members; k++) {
+//                     if (subscriptions[i].consumer_id == group_members[k].consumer_id &&
+//                         strcmp(msg->topic, group_members[k].topic) == 0) {
+//                         in_group = true;
+//                         break;
+//                     }
+//                 }
                 
-                if (!in_group) {
-                    individual_count++;
-                    printf("DEBUG: Sending to individual subscriber %d on socket %d\n", 
-                           subscriptions[i].consumer_id, subscriptions[i].socket_fd);
-                    enqueue_log("DEBUG: Sending to individual subscriber %d on socket %d", 
-                               subscriptions[i].consumer_id, subscriptions[i].socket_fd);
+//                 if (!in_group) {
+//                     individual_count++;
+//                     printf("DEBUG: Sending to individual subscriber %d on socket %d\n", 
+//                            subscriptions[i].consumer_id, subscriptions[i].socket_fd);
+//                     enqueue_log("DEBUG: Sending to individual subscriber %d on socket %d", 
+//                                subscriptions[i].consumer_id, subscriptions[i].socket_fd);
                     
-                    ssize_t bytes_written = write(subscriptions[i].socket_fd, msg, sizeof(Message));
+//                     ssize_t bytes_written = write(subscriptions[i].socket_fd, msg, sizeof(Message));
                     
-                    if (bytes_written < 0) {
-                        printf("DEBUG: Failed to write to individual socket %d: %s\n", 
-                               subscriptions[i].socket_fd, strerror(errno));
-                        enqueue_log("DEBUG: Failed to write to individual socket %d: %s", 
-                                   subscriptions[i].socket_fd, strerror(errno));
-                    } else {
-                        printf("DEBUG: Successfully wrote %zd bytes to individual socket %d\n", 
-                               bytes_written, subscriptions[i].socket_fd);
-                        enqueue_log("DEBUG: Successfully wrote %zd bytes to individual socket %d", 
-                                   bytes_written, subscriptions[i].socket_fd);
-                    }
-                }
-                break;
-            }
-        }
-    }
+//                     if (bytes_written < 0) {
+//                         printf("DEBUG: Failed to write to individual socket %d: %s\n", 
+//                                subscriptions[i].socket_fd, strerror(errno));
+//                         enqueue_log("DEBUG: Failed to write to individual socket %d: %s", 
+//                                    subscriptions[i].socket_fd, strerror(errno));
+//                     } else {
+//                         printf("DEBUG: Successfully wrote %zd bytes to individual socket %d\n", 
+//                                bytes_written, subscriptions[i].socket_fd);
+//                         enqueue_log("DEBUG: Successfully wrote %zd bytes to individual socket %d", 
+//                                    bytes_written, subscriptions[i].socket_fd);
+//                     }
+//                 }
+//                 break;
+//             }
+//         }
+//     }
     
-    printf("DEBUG: Found %d individual subscribers for topic '%s'\n", individual_count, msg->topic);
-    enqueue_log("DEBUG: Found %d individual subscribers for topic '%s'", individual_count, msg->topic);
-}
+//     printf("DEBUG: Found %d individual subscribers for topic '%s'\n", individual_count, msg->topic);
+//     enqueue_log("DEBUG: Found %d individual subscribers for topic '%s'", individual_count, msg->topic);
+// }
 
 // Thread para procesar mensajes y distribuirlos a los consumidores
 void *message_processor_thread(void *arg) {
@@ -842,29 +842,6 @@ void enqueue_log(const char *format, ...) {
     pthread_cond_signal(&log_queue->not_empty);
     pthread_mutex_unlock(&log_queue->mutex);
 }
-
-// bool dequeue_message(Message *out_msg) {
-//     if (!msg_queue || !out_msg) return false;
-
-//     pthread_mutex_lock(&msg_queue->mutex);
-
-//     while (msg_queue->count == 0 && !msg_queue->shutdown) {
-//         pthread_cond_wait(&msg_queue->not_empty, &msg_queue->mutex);
-//     }
-
-//     if (msg_queue->count == 0 && msg_queue->shutdown) {
-//         pthread_mutex_unlock(&msg_queue->mutex);
-//         return false;
-//     }
-
-//     *out_msg = msg_queue->messages[msg_queue->head];
-//     msg_queue->head = (msg_queue->head + 1) % MSG_QUEUE_CAPACITY;
-//     msg_queue->count--;
-
-//     pthread_cond_signal(&msg_queue->not_full);
-//     pthread_mutex_unlock(&msg_queue->mutex);
-//     return true;
-// }
 
 void *log_writer_thread(void *arg) {
     FILE *logfile = fopen("broker.log", "a");
@@ -1122,29 +1099,29 @@ void *producer_handler_thread(void *arg) {
 
 
 
-void debug_print_all_subscriptions() {
-    printf("\n----- DEBUG: ALL SUBSCRIPTIONS -----\n");
-    printf("Individual subscriptions: %d\n", subscription_count);
-    for (int i = 0; i < subscription_count; i++) {
-        printf("Consumer %d (socket %d) topics:", 
-               subscriptions[i].consumer_id, subscriptions[i].socket_fd);
-        for (int j = 0; j < subscriptions[i].topic_count; j++) {
-            printf(" '%s'", subscriptions[i].topics[j]);
-        }
-        printf("\n");
-    }
+// void debug_print_all_subscriptions() {
+//     printf("\n----- DEBUG: ALL SUBSCRIPTIONS -----\n");
+//     printf("Individual subscriptions: %d\n", subscription_count);
+//     for (int i = 0; i < subscription_count; i++) {
+//         printf("Consumer %d (socket %d) topics:", 
+//                subscriptions[i].consumer_id, subscriptions[i].socket_fd);
+//         for (int j = 0; j < subscriptions[i].topic_count; j++) {
+//             printf(" '%s'", subscriptions[i].topics[j]);
+//         }
+//         printf("\n");
+//     }
     
-    printf("\nGroup memberships: %d\n", num_group_members);
-    for (int i = 0; i < num_group_members; i++) {
-        printf("Consumer %d (socket %d): topic '%s', group '%s'\n", 
-               group_members[i].consumer_id, group_members[i].socket_fd,
-               group_members[i].topic, group_members[i].group_id);
-    }
-    printf("----- END DEBUG -----\n\n");
+//     printf("\nGroup memberships: %d\n", num_group_members);
+//     for (int i = 0; i < num_group_members; i++) {
+//         printf("Consumer %d (socket %d): topic '%s', group '%s'\n", 
+//                group_members[i].consumer_id, group_members[i].socket_fd,
+//                group_members[i].topic, group_members[i].group_id);
+//     }
+//     printf("----- END DEBUG -----\n\n");
     
-    // Also log to file
-    enqueue_log("DEBUG: Printed all subscriptions to console");
-}
+//     // Also log to file
+//     enqueue_log("DEBUG: Printed all subscriptions to console");
+// }
 
 // Store the offset for a consumer group
 void update_consumer_offset(const char *topic, const char *group_id, int consumer_id, long long message_id) {

@@ -86,10 +86,7 @@ void *receive_messages(void *arg) {
 
 // Add a flag to track if it's a new connection or reconnection
 int main(int argc, char *argv[]) {
-    //int sock = 0;
     struct sockaddr_in serv_addr;
-    //int consumer_id;
-    //char topic[64];
     char group_id[64] = ""; // Initialize group_id to empty
     long long start_offset = -1; // -1 means start from latest messages
     pthread_t receive_thread;
@@ -191,8 +188,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-
-    // Interfaz para comandos del usuario
     // Interfaz para comandos del usuario
 printf("\nComandos disponibles:\n");
 printf("  quit - Salir del consumidor\n");
