@@ -4,13 +4,13 @@ LDFLAGS = -pthread -lrt
 
 all: broker producer consumer
 
-broker: /src/broker.c
+broker: broker.c
 	$(CC) $(CFLAGS) -o broker broker.c $(LDFLAGS)
 
-producer: /src/producer.c
+producer: producer.c
 	$(CC) $(CFLAGS) -o producer producer.c $(LDFLAGS)
 
-consumer: /src/consumer.c
+consumer: consumer.c
 	$(CC) $(CFLAGS) -o consumer consumer.c $(LDFLAGS)
 
 clean:
