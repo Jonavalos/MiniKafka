@@ -14,6 +14,11 @@
 #include <arpa/inet.h>
 #include <stdarg.h>
 #include <poll.h>
+#include <netinet/in.h>
+#include <asm-generic/socket.h>  // Necesario para SO_REUSEPORT en algunas configuraciones
+#include <sys/time.h>  // Para struct timeval
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #define LOG_MSG_SIZE 256
 #define LOG_QUEUE_CAPACITY 100
