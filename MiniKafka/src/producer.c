@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
     int max_messages = 10; // Límite de mensajes a enviar
     int message_count = 0;
 
-    while (running && message_count < max_messages) {
+    if (running) {
         Message msg;
 
         msg.id = seq;
@@ -110,14 +110,11 @@ int main(int argc, char *argv[]) {
 
         if (write(sock, &msg, sizeof(msg)) != sizeof(msg)) {
             perror("Error al enviar mensaje");
-            break;
+            close(sock);
+            exit(1); // Salir con un código de error
         }
 
         printf(">> Mensaje %lld enviado al topic '%s'\n", seq, topic);
-
-        seq++;
-        message_count++;
-        usleep(1000000 / MAX_MESSAGES_PER_SECOND);
     }
 
     printf("Finalizando productor...\n");
