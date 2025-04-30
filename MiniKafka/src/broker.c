@@ -167,10 +167,8 @@ void *producer_handler_thread(void *arg);
 
 // Subscription functions
 void add_subscription(int consumer_id, int socket_fd, const char *topic, const char *group_id);
-void remove_subscription(int consumer_id, const char *topic);
 
-// Function to distribute messages to subscribed consumers
-void distribute_message(const char *topic, const char *group_id, const char *message);
+void distribute_message(const char *topic, const char *message);
 
 // Thread para procesar mensajes y distribuirlos a los consumidores
 void *message_processor_thread(void *arg);
@@ -207,6 +205,7 @@ GroupMember *group_members = NULL; // Lista enlazada de miembros de grupo
 pthread_mutex_t group_members_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Subscription functions
+//
 
 //************************* G R O U P    M E M B E R S***************** */
 void add_group_member(const char *topic, const char *group_id, int consumer_id, int socket_fd) {
@@ -503,7 +502,7 @@ void *message_processor_thread(void *arg) {
             }
 
             // Enviar mensaje al grupo correspondiente
-            distribute_message(msg.topic, group_id, msg.payload);
+            distribute_message(msg.topic, msg.payload);
         }
 
         // Evitar uso excesivo de CPU
@@ -513,58 +512,74 @@ void *message_processor_thread(void *arg) {
     return NULL;
 }
 
-void distribute_message(const char *topic, const char *group_id, const char *message) {
-    printf("DEBUG: Intentando distribuir mensaje para tópico '%s', grupo '%s'\n", topic, group_id);
-    enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s', grupo '%s'", topic, group_id);
+void distribute_message(const char *topic, const char *message) {
+    printf("DEBUG: Intentando distribuir mensaje para tópico '%s'\n", topic);
+    enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s'", topic);
 
-    char full_message[MAX_MESSAGE_LENGTH];
-    snprintf(full_message, sizeof(full_message), "%s", message);
+    // 1) Primero recolectamos los group_id únicos en una lista auxiliar
+    #define MAX_GROUPS 100
+    char *seen_groups[MAX_GROUPS];
+    int  seen_count = 0;
 
-    while (true) {
-        int consumer_socket = get_next_consumer_in_group(topic, group_id);
-        if (consumer_socket < 0) {
-            // No quedan consumidores
-            enqueue_log("WARNING: No quedan consumidores para tópico '%s', grupo '%s'; mensaje descartado",
-                        topic, group_id);
-            return;
-        }
-
-        // Detectar hang‑up antes de enviar
-        struct pollfd pfd = { .fd = consumer_socket, .events = POLLIN | POLLHUP };
-        int polled = poll(&pfd, 1, 0);
-        if (polled > 0 && (pfd.revents & POLLHUP)) {
-            // Este consumidor murió: lo quitamos y reintentamos
-            int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
-            if (cid >= 0) {
-                enqueue_log("DEBUG: Consumidor %d detectado colgado antes de enviar; removiendo",
-                            cid);
-                remove_subscription(cid, topic);
+    pthread_mutex_lock(&group_members_mutex);
+    for (GroupMember *cur = group_members; cur; cur = cur->next) {
+        if (strcmp(cur->topic, topic) != 0) continue;
+        // ¿Ya vimos este group_id?
+        bool found = false;
+        for (int i = 0; i < seen_count; i++) {
+            if (strcmp(seen_groups[i], cur->group_id) == 0) {
+                found = true;
+                break;
             }
-            close(consumer_socket);
-            continue;  // volver a buscar siguiente consumidor
         }
+        if (!found && seen_count < MAX_GROUPS) {
+            seen_groups[seen_count++] = cur->group_id;
+        }
+    }
+    pthread_mutex_unlock(&group_members_mutex);
 
-        // Intentar el envío
-        ssize_t bytes_sent = send(consumer_socket, full_message, strlen(full_message), MSG_NOSIGNAL);
-        if (bytes_sent > 0) {
-            // Obtener el ID del consumidor
-            int consumer_id = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+    // 2) Para cada grupo único, hacemos el round-robin de envio
+    for (int gi = 0; gi < seen_count; gi++) {
+        const char *group_id = seen_groups[gi];
+        char full_message[MAX_MESSAGE_LENGTH];
+        snprintf(full_message, sizeof(full_message), "%s", message);
 
-            // Éxito: registrar en el log y salir del loop
-            printf("DEBUG: Mensaje enviado a socket %d (consumer %d): %s\n", consumer_socket, consumer_id, full_message);
-            enqueue_log("DEBUG: Mensaje enviado a socket %d (consumer %d): %s", consumer_socket, consumer_id, full_message);
-            return;
-        } else {
-            // Error en el envío: quitamos al consumidor y reintentamos
-            int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
-            if (cid >= 0) {
-                enqueue_log("ERROR: Falló envío a consumidor %d; errno=%d; removiendo",
-                            cid, errno);
-                remove_subscription(cid, topic);
+        // Igual que tu versión que funcionaba: loop hasta enviar o agotar consumidores
+        while (true) {
+            int consumer_socket = get_next_consumer_in_group(topic, group_id);
+            if (consumer_socket < 0) {
+                enqueue_log("WARNING: No quedan consumidores para tópico '%s', grupo '%s'; descarto",
+                            topic, group_id);
+                break;
             }
-            close(consumer_socket);
-            // y volvemos a intentar con el siguiente
-            continue;
+
+            // Detectar hang-up
+            struct pollfd pfd = { .fd = consumer_socket, .events = POLLIN|POLLHUP };
+            if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLHUP)) {
+                int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+                if (cid >= 0) {
+                    enqueue_log("DEBUG: Consumidor %d colgado; removiendo", cid);
+                    remove_subscription(cid, topic);
+                }
+                close(consumer_socket);
+                continue;
+            }
+
+            // Intentar envío
+            ssize_t w = send(consumer_socket, full_message, strlen(full_message), MSG_NOSIGNAL);
+            if (w > 0) {
+                enqueue_log("DEBUG: Mensaje enviado a socket %d en grupo '%s': %s",
+                            consumer_socket, group_id, full_message);
+                break;
+            } else {
+                int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+                if (cid >= 0) {
+                    enqueue_log("ERROR: Falló envío a consumidor %d; removiendo", cid);
+                    remove_subscription(cid, topic);
+                }
+                close(consumer_socket);
+                continue;
+            }
         }
     }
 }
@@ -988,6 +1003,8 @@ void *producer_handler_thread(void *arg) {
     close(client_fd);
     return NULL;
 }
+
+
 //************************* O F F S E T S ***************** */
 
 

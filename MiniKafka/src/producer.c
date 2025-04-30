@@ -7,8 +7,10 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <errno.h>
+#include <time.h>      // Opcional: para nanosleep()
 
 #define MSG_PAYLOAD_SIZE 256
+#define MAX_MESSAGES_PER_SECOND 10
 
 // Message structure (debe coincidir con la definición en el broker)
 #pragma pack(push, 1)
@@ -20,18 +22,20 @@ typedef struct {
 } Message;
 #pragma pack(pop)
 
+
 volatile sig_atomic_t running = 1;
 
 void signal_handler(int signum) {
     running = 0;
 }
 
+
 int main(int argc, char *argv[]) {
     int sock = 0;
     struct sockaddr_in serv_addr;
     int producer_id;
     char topic[64];
-    long long seq = 0; // Contador de secuencia
+    long long seq = 0;                 // Contador de secuencia
 
     // Configurar manejador de señales
     signal(SIGINT, signal_handler);
@@ -73,23 +77,46 @@ int main(int argc, char *argv[]) {
 
     printf("Conectado al broker\n");
 
-    // Enviar 5 mensajes
-    for (int i = 0; i < 5 && running; i++) {
+    // Enviar tipo de cliente (1 = productor)
+    int client_type = 1;
+    if (write(sock, &client_type, sizeof(client_type)) != sizeof(client_type)) {
+        perror("Error al enviar tipo de cliente");
+        close(sock);
+        return 1;
+    }
+
+    // Enviar ID del productor
+    if (write(sock, &producer_id, sizeof(producer_id)) != sizeof(producer_id)) {
+        perror("Error al enviar ID del productor");
+        close(sock);
+        return 1;
+    }
+
+    printf("Produciendo mensajes automáticamente. Presione Ctrl+C para detener.\n");
+
+    // Bucle principal: enviar secuencia numérica cada segundo
+    sleep(2);  // Esperar 2 segundos antes de empezar a enviar mensajes
+    int max_messages = 200; // Límite de mensajes a enviar
+    int message_count = 0;
+
+    for (int i = 0; i < max_messages && running; i++) {
         Message msg;
-        msg.id = seq++;
+    
+        msg.id = seq;
         msg.producer_id = producer_id;
         strncpy(msg.topic, topic, sizeof(msg.topic) - 1);
         msg.topic[sizeof(msg.topic) - 1] = '\0';
-        snprintf(msg.payload, sizeof(msg.payload), "Mensaje %lld", msg.id);
-
+        snprintf(msg.payload, sizeof(msg.payload), "%lld", seq);
+    
         if (write(sock, &msg, sizeof(msg)) != sizeof(msg)) {
             perror("Error al enviar mensaje");
             close(sock);
-            return 1;
+            exit(1); // Salir con un código de error
         }
-
-        printf(">> Mensaje %lld enviado al topic '%s'\n", msg.id, topic);
-        sleep(1); // Esperar 1 segundo entre mensajes
+    
+        printf(">> Mensaje %lld enviado al topic '%s'\n", seq, topic);
+        seq++; // Incrementar el contador de secuencia
+        usleep(1000000 / MAX_MESSAGES_PER_SECOND); // Controlar la frecuencia de envío
     }
 
     printf("Finalizando productor...\n");
