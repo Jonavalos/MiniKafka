@@ -47,41 +47,41 @@ void signal_handler(int signum) {
 
 // Thread para recibir mensajes
 void *receive_messages(void *arg) {
+    printf("Inicio receive_messages\n");
     int sock = *((int *)arg);
-    Message msg;
+    char buf[512];
 
     while (running) {
-        // Recibir mensaje
-        memset(&msg, 0, sizeof(msg));
-        // ssize_t bytes_read = read(sock, &msg, sizeof(msg));
+        printf("En while\n");
 
-
-        // if (bytes_read <= 0) {
-        //     if (errno == EINTR) continue; // Interrupción por señal
-        //     if (bytes_read == 0) {
-        //         printf("Broker cerró la conexión\n");
-        //     } else {
-        //         perror("Error al recibir mensaje");
-        //     }
-        //     running = 0;
-        //     break;
-        // }
-
-        // Mostrar el mensaje recibido
-        char buf[512];
-        ssize_t n = read(sock, buf, sizeof(buf)-1);
+        // Leer datos del socket
+        ssize_t n = read(sock, buf, sizeof(buf) - 1);
         if (n > 0) {
-            buf[n] = '\0';
-            printf("Recibido: %s\n", buf);
-        }
+            buf[n] = '\0'; // Asegurar que la cadena esté terminada en NULL
 
-        memset(&msg, 0, sizeof(msg));
-        fflush(stdout);
+            // Verificar si el mensaje es de control
+            if (strncmp(buf, "SUBSCRIBED:", 11) == 0) {
+                printf("Mensaje de control recibido: %s\n", buf);
+            } else {
+                // Es un mensaje real (payload)
+                printf("Payload recibido: %s\n", buf);
+            }
+        } else if (n == 0) {
+            printf("Broker cerró la conexión\n");
+            running = 0;
+            break;
+        } else {
+            perror("Error al recibir mensaje");
+            printf("Error en read(), errno: %d\n", errno);
+            running = 0;
+            break;
+        }
     }
+    printf("fin receive_messages\n");
+
 
     return NULL;
 }
-
 
 
 // Add a flag to track if it's a new connection or reconnection
@@ -136,26 +136,30 @@ int main(int argc, char *argv[]) {
     }
 
     // Crear socket
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Error al crear socket");
-        return 1;
-    }
+if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    perror("Error al crear socket");
+    return 1;
+}
+printf("Socket creado correctamente\n");
 
-    // Configurar dirección del servidor
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(8080);
+// Configurar dirección del servidor
+serv_addr.sin_family = AF_INET;
+serv_addr.sin_port = htons(8080);
 
-    // Convertir dirección IP
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        perror("Dirección inválida");
-        return 1;
-    }
+if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+    perror("Dirección inválida");
+    return 1;
+}
+printf("Dirección configurada correctamente\n");
 
-    // Conectar al servidor
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Conexión fallida");
-        return 1;
-    }
+// Conectar al servidor
+if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    perror("Conexión fallida");
+    return 1;
+}
+printf("Conexión al broker establecida correctamente\n");
+
+
 
     ///*************************/
     printf("Conectado al broker\n");
@@ -165,19 +169,21 @@ int main(int argc, char *argv[]) {
     
     if (start_offset >= 0) {
         snprintf(subscribe_message, sizeof(subscribe_message), 
-                "SUBSCRIBE:%d:%s:%s:%lld", consumer_id, topic, group_id, start_offset);
+         "SUBSCRIBE:%d:%s:%s:%lld", consumer_id, topic, group_id, start_offset);
     } else {
         snprintf(subscribe_message, sizeof(subscribe_message), 
-                "SUBSCRIBE:%d:%s:%s", consumer_id, topic, group_id);
+         "SUBSCRIBE:%d:%s:%s", consumer_id, topic, group_id);
     }
     
+    // Enviar solicitud de suscripción
     if (write(sock, subscribe_message, strlen(subscribe_message)) != strlen(subscribe_message)) {
         perror("Error al enviar solicitud de suscripción");
         close(sock);
         return 1;
     }
+    printf("Solicitud de suscripción enviada correctamente\n");
 
-    printf("Enviada solicitud de suscripción: '%s'\n", subscribe_message);
+    printf("Mensaje de suscripción: '%s'\n", subscribe_message);
 
     printf("Suscrito al topic '%s' (grupo '%s'). Esperando mensajes...\n", topic, group_id);
 
