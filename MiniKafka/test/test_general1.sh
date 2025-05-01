@@ -11,11 +11,11 @@ if [ $? -ne 0 ]; then
   echo "Error compilando broker"
   exit 1
 fi
-gcc -o consumer ../src/consumer.c -lpthread
-if [ $? -ne 0 ]; then
-  echo "Error compilando consumer"
-  exit 1
-fi
+# gcc -o consumer ../src/consumer.c -lpthread
+# if [ $? -ne 0 ]; then
+#   echo "Error compilando consumer"
+#   exit 1
+# fi
 gcc -o producer ../src/producer.c -lpthread
 if [ $? -ne 0 ]; then
   echo "Error compilando producer"

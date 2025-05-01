@@ -29,6 +29,24 @@ void signal_handler(int signum) {
     running = 0;
 }
 
+// Función para enviar todos los bytes de un mensaje
+ssize_t send_all(int sock, const void *buffer, size_t length) {
+    size_t total_sent = 0;
+    const char *ptr = buffer;
+
+    while (total_sent < length) {
+        ssize_t bytes_sent = send(sock, ptr + total_sent, length - total_sent, 0);
+        if (bytes_sent <= 0) {
+            if (errno == EINTR) continue; // Reintentar si la llamada fue interrumpida
+            perror("Error al enviar mensaje");
+            return -1; // Error
+        }
+        total_sent += bytes_sent;
+    }
+    printf("DEBUG: Enviados %zu bytes\n", total_sent);
+    return total_sent;
+}
+
 
 int main(int argc, char *argv[]) {
     int sock = 0;
@@ -99,24 +117,30 @@ int main(int argc, char *argv[]) {
     int max_messages = 200; // Límite de mensajes a enviar
     int message_count = 0;
 
-    for (int i = 0; i < max_messages && running; i++) {
-        Message msg;
-    
-        msg.id = seq;
+    if (running) {
+        Message msg = {0}; // Inicializa todos los campos a 0
+        msg.id = producer_id; // ID del mensaje
         msg.producer_id = producer_id;
         strncpy(msg.topic, topic, sizeof(msg.topic) - 1);
         msg.topic[sizeof(msg.topic) - 1] = '\0';
-        snprintf(msg.payload, sizeof(msg.payload), "%lld", seq);
-    
-        if (write(sock, &msg, sizeof(msg)) != sizeof(msg)) {
+        snprintf(msg.payload, sizeof(msg.payload), "Mensaje del productor %d", producer_id);
+
+        // Validar que el mensaje tenga un topic y un payload válidos
+        if (strlen(msg.topic) == 0 || strlen(msg.payload) == 0) {
+            fprintf(stderr, "ERROR: Mensaje no válido. Topic o payload vacío.\n");
+            close(sock);
+            return 1; // Salir con un código de error
+        }
+        printf("DEBUG: Enviando mensaje ID=%lld, ProducerID=%d, Topic='%s', Payload='%s'\n",
+            msg.id, msg.producer_id, msg.topic, msg.payload);
+        // Enviar el mensaje
+        if (send_all(sock, &msg, sizeof(msg)) != sizeof(msg)) {
             perror("Error al enviar mensaje");
             close(sock);
-            exit(1); // Salir con un código de error
+            return 1; // Salir con un código de error
         }
-    
-        printf(">> Mensaje %lld enviado al topic '%s'\n", seq, topic);
-        seq++; // Incrementar el contador de secuencia
-        usleep(1000000 / MAX_MESSAGES_PER_SECOND); // Controlar la frecuencia de envío
+
+        printf(">> Mensaje enviado al topic '%s' con payload: '%s'\n", msg.topic, msg.payload);
     }
 
     printf("Finalizando productor...\n");
