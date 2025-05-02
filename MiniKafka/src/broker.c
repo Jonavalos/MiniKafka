@@ -1430,7 +1430,7 @@ int main() {
         goto CLEANUP_ALL;
     }
 
-    if (listen(server_fd, 10) < 0) {
+    if (listen(server_fd, SOMAXCONN) < 0) {
         perror("listen failed");
         close(server_fd);
         goto CLEANUP_ALL;

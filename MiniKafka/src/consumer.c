@@ -52,7 +52,7 @@ void *receive_messages(void *arg) {
     char buf[512];
 
     while (running) {
-        printf("En while\n");
+        //printf("En while\n");
 
         // Leer datos del socket
         ssize_t n = read(sock, buf, sizeof(buf) - 1);

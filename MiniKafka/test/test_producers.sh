@@ -44,7 +44,7 @@ trap cleanup SIGINT SIGTERM
 # Lanzar producers con IDs del 1 al 5
 echo "Iniciando 5 producers para el topic '${TOPIC}'..."
 clear
-for PRODUCER_ID in {1..1000}; do
+for PRODUCER_ID in {1..4000}; do
   echo "  - Producer ID=${PRODUCER_ID}"
   ./producer "$PRODUCER_ID" "$TOPIC" &
   PIDS+=("$!")
