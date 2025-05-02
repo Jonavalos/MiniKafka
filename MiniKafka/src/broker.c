@@ -414,8 +414,8 @@ void remove_group_member(const char *topic, const char *group_id, int consumer_i
                 prev->next = current->next;
             }
             free(current);
-            enqueue_log("Removed group member: topic='%s', group='%s', consumer_id=%d",
-                        topic, group_id, consumer_id);
+            // enqueue_log("Removed group member: topic='%s', group='%s', consumer_id=%d",
+            //             topic, group_id, consumer_id);
             pthread_mutex_unlock(&group_members_mutex);
             return;
         }
@@ -474,7 +474,7 @@ void add_subscription(int consumer_id, int socket_fd, const char *topic, const c
     }
     if (!topic_exists && current->topic_count < 10) {
         strcpy(current->topics[current->topic_count++], topic);
-        enqueue_log("Consumer %d subscribed to topic '%s'", consumer_id, topic);
+        // enqueue_log("Consumer %d subscribed to topic '%s'", consumer_id, topic);
     }
 
     // Registrar al consumidor en el grupo
@@ -499,7 +499,7 @@ void remove_subscription(int consumer_id, const char *topic) {
                         strcpy(current->topics[i], current->topics[current->topic_count - 1]);
                     }
                     current->topic_count--;
-                    enqueue_log("Consumer %d unsubscribed from topic '%s'", consumer_id, topic);
+                    // enqueue_log("Consumer %d unsubscribed from topic '%s'", consumer_id, topic);
                     break;
                 }
             }
@@ -555,7 +555,7 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
     pthread_mutex_lock(&group_distribution_state_mutex);
 
     printf("DEBUG: Buscando consumer para topic '%s', grupo '%s'\n", topic, group_id);
-    enqueue_log("DEBUG: Buscando consumer para topic '%s', grupo '%s'", topic, group_id);
+    // enqueue_log("DEBUG: Buscando consumer para topic '%s', grupo '%s'", topic, group_id);
 
     // Contar los miembros del grupo y almacenar sus sockets e IDs
     int member_count = 0;
@@ -576,7 +576,7 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
 
     if (member_count == 0) {
         printf("WARNING: No hay miembros en el grupo '%s' para el tópico '%s'\n", group_id, topic);
-        enqueue_log("WARNING: No hay miembros en el grupo '%s' para el tópico '%s'", group_id, topic);
+        // enqueue_log("WARNING: No hay miembros en el grupo '%s' para el tópico '%s'", group_id, topic);
         pthread_mutex_unlock(&group_distribution_state_mutex);
         pthread_mutex_unlock(&group_members_mutex);
         return -1;
@@ -612,7 +612,7 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
     // Validación del índice
     if (current_index >= member_count || current_index < 0) {
         printf("WARNING: Índice fuera de rango (%d), reiniciando\n", current_index);
-        enqueue_log("WARNING: Índice fuera de rango (%d), reiniciando", current_index);
+        // enqueue_log("WARNING: Índice fuera de rango (%d), reiniciando", current_index);
         current_index = 0;
         group_distribution_states[state_index].next_consumer_index = 1 % member_count;
     } else {
@@ -624,8 +624,8 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
 
     printf("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)\n",
            selected_consumer, selected_socket, current_index, member_count);
-    enqueue_log("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)",
-                selected_consumer, selected_socket, current_index, member_count);
+    // enqueue_log("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)",
+    //             selected_consumer, selected_socket, current_index, member_count);
 
     pthread_mutex_unlock(&group_distribution_state_mutex);
     pthread_mutex_unlock(&group_members_mutex);
@@ -642,8 +642,8 @@ void *message_processor_thread(void *arg) {
             // Log del mensaje dequeued
             printf("DEBUG: Dequeued message ID %lld from producer %d, topic '%s'\n", 
                    msg.id, msg.producer_id, msg.topic);
-            enqueue_log("DEBUG: Dequeued message ID %lld from producer %d, topic '%s'", 
-                       msg.id, msg.producer_id, msg.topic);
+            // enqueue_log("DEBUG: Dequeued message ID %lld from producer %d, topic '%s'", 
+            //            msg.id, msg.producer_id, msg.topic);
 
             // Determinar el grupo correspondiente al mensaje
             char group_id[64] = "";
@@ -661,7 +661,7 @@ void *message_processor_thread(void *arg) {
 
             if (strlen(group_id) == 0) {
                 printf("WARNING: No se encontró un grupo para el tópico '%s'\n", msg.topic);
-                enqueue_log("WARNING: No se encontró un grupo para el tópico '%s'", msg.topic);
+                // enqueue_log("WARNING: No se encontró un grupo para el tópico '%s'", msg.topic);
                 continue;
             }
 
@@ -678,7 +678,7 @@ void *message_processor_thread(void *arg) {
 
 void distribute_message(const char *topic, const char *message) {
     printf("DEBUG: Intentando distribuir mensaje para tópico '%s'\n", topic);
-    enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s'", topic);
+    // enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s'", topic);
 
     // 1) Primero recolectamos los group_id únicos en una lista auxiliar
     #define MAX_GROUPS 100
@@ -712,8 +712,8 @@ void distribute_message(const char *topic, const char *message) {
         while (true) {
             int consumer_socket = get_next_consumer_in_group(topic, group_id);
             if (consumer_socket < 0) {
-                enqueue_log("WARNING: No quedan consumidores para tópico '%s', grupo '%s'; descarto",
-                            topic, group_id);
+                // enqueue_log("WARNING: No quedan consumidores para tópico '%s', grupo '%s'; descarto",
+                //             topic, group_id);
                 break;
             }
 
@@ -722,7 +722,7 @@ void distribute_message(const char *topic, const char *message) {
             if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLHUP)) {
                 int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
                 if (cid >= 0) {
-                    enqueue_log("DEBUG: Consumidor %d colgado; removiendo", cid);
+                    // enqueue_log("DEBUG: Consumidor %d colgado; removiendo", cid);
                     remove_subscription(cid, topic);
                 }
                 close(consumer_socket);
@@ -732,8 +732,9 @@ void distribute_message(const char *topic, const char *message) {
             // Intentar envío
             ssize_t w = send(consumer_socket, full_message, strlen(full_message), MSG_NOSIGNAL);
             if (w > 0) {
-                enqueue_log("DEBUG: Mensaje enviado a socket %d en grupo '%s': %s",
-                            consumer_socket, group_id, full_message);
+                int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+                enqueue_log("DEBUG: Mensaje enviado a socket %d (Consumer ID=%d) en grupo '%s': %s",
+                            consumer_socket, cid, group_id, full_message);
                 break;
             } else {
                 int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
@@ -1144,8 +1145,8 @@ void update_consumer_offset(const char *topic, const char *group_id, int consume
             current->consumer_id == consumer_id) {
             // Actualizar el offset existente
             current->last_consumed_offset = message_id;
-            enqueue_log("Updated offset for group '%s', topic '%s', consumer %d to %lld",
-                        group_id, topic, consumer_id, message_id);
+            // enqueue_log("Updated offset for group '%s', topic '%s', consumer %d to %lld",
+            //             group_id, topic, consumer_id, message_id);
             pthread_mutex_unlock(&consumer_offsets_mutex);
             return;
         }
@@ -1174,8 +1175,8 @@ void update_consumer_offset(const char *topic, const char *group_id, int consume
         prev->next = new_offset;
     }
 
-    enqueue_log("Created new offset for group '%s', topic '%s', consumer %d to %lld",
-                group_id, topic, consumer_id, message_id);
+    // enqueue_log("Created new offset for group '%s', topic '%s', consumer %d to %lld",
+    //             group_id, topic, consumer_id, message_id);
 
     pthread_mutex_unlock(&consumer_offsets_mutex);
 }
@@ -1224,8 +1225,8 @@ long long get_group_last_offset(const char *topic, const char *group_id) {
 void save_consumer_offsets() {
     FILE *offset_file = fopen("consumer_offsets.dat", "w");
     if (!offset_file) {
-        enqueue_log("ERROR: Failed to open consumer_offsets.dat for writing: %s",
-                    strerror(errno));
+        // enqueue_log("ERROR: Failed to open consumer_offsets.dat for writing: %s",
+        //             strerror(errno));
         return;
     }
 
@@ -1243,7 +1244,7 @@ void save_consumer_offsets() {
 
     pthread_mutex_unlock(&consumer_offsets_mutex);
     fclose(offset_file);
-    enqueue_log("Consumer offsets saved to file");
+    // enqueue_log("Consumer offsets saved to file");
 }
 
 // Function to load consumer offsets on startup
@@ -1251,8 +1252,8 @@ void load_consumer_offsets() {
     FILE *offset_file = fopen("consumer_offsets.dat", "r");
     if (!offset_file) {
         if (errno != ENOENT) {
-            enqueue_log("WARNING: Failed to open consumer_offsets.dat for reading: %s",
-                        strerror(errno));
+            // enqueue_log("WARNING: Failed to open consumer_offsets.dat for reading: %s",
+            //             strerror(errno));
         }
         return;
     }
@@ -1284,7 +1285,7 @@ void load_consumer_offsets() {
 
     pthread_mutex_unlock(&consumer_offsets_mutex);
     fclose(offset_file);
-    enqueue_log("Loaded consumer offsets from file");
+    // enqueue_log("Loaded consumer offsets from file");
 }
 
 // Function to send messages from a specific offset
@@ -1305,8 +1306,8 @@ void send_messages_from_offset(int consumer_id, int client_fd, const char *topic
     
     pthread_mutex_unlock(&message_history_mutex);
     
-    enqueue_log("Sent %d historical messages to consumer %d for topic '%s' from offset %lld",
-               count_sent, consumer_id, topic, start_offset);
+    // enqueue_log("Sent %d historical messages to consumer %d for topic '%s' from offset %lld",
+    //            count_sent, consumer_id, topic, start_offset);
 }
 
 
@@ -1368,7 +1369,7 @@ int main() {
         fprintf(stderr, "Failed to initialize log queue\n");
         return 1;
     }
-    enqueue_log("Broker iniciado y escuchando en el puerto 8080");
+    // enqueue_log("Broker iniciado y escuchando en el puerto 8080");
 
     // 3) Inicializar cola de mensajes
     if (init_msg_queue() != 0) {
@@ -1450,7 +1451,7 @@ int main() {
     }
 
     // 11) Iniciar apagado ordenado
-    enqueue_log("Iniciando apagado del broker");
+    // enqueue_log("Iniciando apagado del broker");
 
     // 11a) Cerrar el socket de accept
     close(server_fd);
