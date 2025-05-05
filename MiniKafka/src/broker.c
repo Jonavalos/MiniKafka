@@ -422,10 +422,17 @@ void remove_group_member(const char *topic, const char *group_id, int consumer_i
                 prev->next = current->next;
             }
             free(current);
+<<<<<<< HEAD
             is_found = 1;
             enqueue_log("Removed group member: topic='%s', group='%s', consumer_id=%d",
                        topic, group_id, consumer_id);
             break;
+=======
+            // enqueue_log("Removed group member: topic='%s', group='%s', consumer_id=%d",
+            //             topic, group_id, consumer_id);
+            pthread_mutex_unlock(&group_members_mutex);
+            return;
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
         }
         prev = current;
         current = current->next;
@@ -712,7 +719,12 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
     pthread_mutex_lock(&group_members_mutex);
     pthread_mutex_lock(&group_distribution_state_mutex);
 
+<<<<<<< HEAD
     enqueue_log("DEBUG: Buscando consumer para topic '%s', grupo '%s'", topic, group_id);
+=======
+    printf("DEBUG: Buscando consumer para topic '%s', grupo '%s'\n", topic, group_id);
+    // enqueue_log("DEBUG: Buscando consumer para topic '%s', grupo '%s'", topic, group_id);
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
 
   
     // Contar los miembros del grupo y almacenar sus sockets e IDs
@@ -733,11 +745,16 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
     }
 
     if (member_count == 0) {
+<<<<<<< HEAD
         enqueue_log("WARNING: No hay miembros en el grupo '%s' para el tópico '%s', limpiando estado", 
                     group_id, topic);
         printf("WARNING: No hay miembros en el grupo '%s' para el tópico '%s', limpiando estado\n", 
                group_id, topic);
         // Clean up the state since we have no members
+=======
+        printf("WARNING: No hay miembros en el grupo '%s' para el tópico '%s'\n", group_id, topic);
+        // enqueue_log("WARNING: No hay miembros en el grupo '%s' para el tópico '%s'", group_id, topic);
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
         pthread_mutex_unlock(&group_distribution_state_mutex);
         pthread_mutex_unlock(&group_members_mutex);
         remove_group_distribution_state(topic, group_id);
@@ -797,8 +814,13 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
 
     // Validación del índice
     if (current_index >= member_count || current_index < 0) {
+<<<<<<< HEAD
         enqueue_log("WARNING: Índice fuera de rango (%d), reiniciando", current_index);
         printf("WARNING: Índice fuera de rango (%d), reiniciando\n", current_index);
+=======
+        printf("WARNING: Índice fuera de rango (%d), reiniciando\n", current_index);
+        // enqueue_log("WARNING: Índice fuera de rango (%d), reiniciando", current_index);
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
         current_index = 0;
         group_distribution_states[state_index].next_consumer_index = 1 % member_count;
     } else {
@@ -808,10 +830,17 @@ int get_next_consumer_in_group(const char *topic, const char *group_id) {
     int selected_socket = socket_fds[current_index];
     int selected_consumer = consumer_ids[current_index];
 
+<<<<<<< HEAD
     enqueue_log("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)",
                 selected_consumer, selected_socket, current_index, member_count);
     printf("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)\n",
            selected_consumer, selected_socket, current_index, member_count);
+=======
+    printf("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)\n",
+           selected_consumer, selected_socket, current_index, member_count);
+    // enqueue_log("DEBUG: Seleccionado consumidor %d con socket %d (índice %d de %d)",
+    //             selected_consumer, selected_socket, current_index, member_count);
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
 
     pthread_mutex_unlock(&group_distribution_state_mutex);
     pthread_mutex_unlock(&group_members_mutex);
@@ -865,8 +894,13 @@ void *message_processor_thread(void *arg) {
 // Versión corregida de distribute_message
 void distribute_message(const char *topic, const char *message) {
     printf("DEBUG: Intentando distribuir mensaje para tópico '%s'\n", topic);
+<<<<<<< HEAD
     enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s'", topic);
     
+=======
+    // enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s'", topic);
+
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
     // 1) Primero recolectamos los group_id únicos en una lista auxiliar
     #define MAX_GROUPS 100
     char seen_groups[MAX_GROUPS][64]; // Almacenamos strings completos, no punteros
@@ -905,6 +939,7 @@ void distribute_message(const char *topic, const char *message) {
         
         char full_message[MAX_MESSAGE_LENGTH];
         snprintf(full_message, sizeof(full_message), "%s", message);
+<<<<<<< HEAD
         
         // Verificar si el grupo tiene miembros antes de intentar enviar
         pthread_mutex_lock(&group_members_mutex);
@@ -912,6 +947,15 @@ void distribute_message(const char *topic, const char *message) {
         for (GroupMember *cur = group_members; cur; cur = cur->next) {
             if (strcmp(cur->topic, topic) == 0 && strcmp(cur->group_id, group_id) == 0) {
                 has_members = true;
+=======
+
+        // Igual que tu versión que funcionaba: loop hasta enviar o agotar consumidores
+        while (true) {
+            int consumer_socket = get_next_consumer_in_group(topic, group_id);
+            if (consumer_socket < 0) {
+                // enqueue_log("WARNING: No quedan consumidores para tópico '%s', grupo '%s'; descarto",
+                //             topic, group_id);
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
                 break;
             }
         }
@@ -943,15 +987,20 @@ void distribute_message(const char *topic, const char *message) {
             if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLHUP)) {
                 int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
                 if (cid >= 0) {
+<<<<<<< HEAD
                     enqueue_log("DEBUG: Consumidor %d colgado; removiendo", cid);
                     printf("DEBUG: Consumidor %d colgado; removiendo\n", cid);
                     remove_group_member(topic, group_id, cid);
+=======
+                    // enqueue_log("DEBUG: Consumidor %d colgado; removiendo", cid);
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
                     remove_subscription(cid, topic);
                 }
                 // No cerrar el socket aquí si ya fue cerrado por el cliente
                 retry_count++;
                 continue;
             }
+<<<<<<< HEAD
             
             // Intentar envío con un mensaje completo y terminado correctamente
             full_message[sizeof(full_message) - 1] = '\0'; // Asegurar terminación
@@ -964,6 +1013,16 @@ void distribute_message(const char *topic, const char *message) {
                 printf("DEBUG: Mensaje enviado con éxito a socket %d en grupo '%s'\n",
                        consumer_socket, group_id); 
                 break; // Éxito - salir del bucle
+=======
+
+            // Intentar envío
+            ssize_t w = send(consumer_socket, full_message, strlen(full_message), MSG_NOSIGNAL);
+            if (w > 0) {
+                int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
+                enqueue_log("DEBUG: Mensaje enviado a socket %d (Consumer ID=%d) en grupo '%s': %s",
+                            consumer_socket, cid, group_id, full_message);
+                break;
+>>>>>>> dade3c947e83eee465537c6d70a6eb69d2714acd
             } else {
                 int cid = find_consumer_id_by_socket(consumer_socket, topic, group_id);
                 if (cid >= 0) {
