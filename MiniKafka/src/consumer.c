@@ -47,24 +47,19 @@ void signal_handler(int signum) {
 
 // Thread para recibir mensajes
 void *receive_messages(void *arg) {
-    printf("Inicio receive_messages\n");
     int sock = *((int *)arg);
     char buf[512];
 
     while (running) {
-        //printf("En while\n");
-
-        // Leer datos del socket
         ssize_t n = read(sock, buf, sizeof(buf) - 1);
         if (n > 0) {
             buf[n] = '\0'; // Asegurar que la cadena esté terminada en NULL
 
-            // Verificar si el mensaje es de control
-            if (strncmp(buf, "SUBSCRIBED:", 11) == 0) {
-                printf("Mensaje de control recibido: %s\n", buf);
-            } else {
-                // Es un mensaje real (payload)
+            // Verificar si el mensaje es válido
+            if (strlen(buf) > 0) {
                 printf("Payload recibido: %s\n", buf);
+            } else {
+                printf("Mensaje corrupto recibido, ignorando...\n");
             }
         } else if (n == 0) {
             printf("Broker cerró la conexión\n");
@@ -72,13 +67,10 @@ void *receive_messages(void *arg) {
             break;
         } else {
             perror("Error al recibir mensaje");
-            printf("Error en read(), errno: %d\n", errno);
             running = 0;
             break;
         }
     }
-    printf("fin receive_messages\n");
-
 
     return NULL;
 }
