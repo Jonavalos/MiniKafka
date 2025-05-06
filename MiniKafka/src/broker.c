@@ -14,24 +14,27 @@
 #include <arpa/inet.h>
 #include <stdarg.h>
 #include <poll.h>
-#include <netinet/in.h>
 #include <asm-generic/socket.h>  // Necesario para SO_REUSEPORT en algunas configuraciones
 #include <sys/time.h>  // Para struct timeval
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <semaphore.h>
 
 #define LOG_MSG_SIZE 256
 #define LOG_QUEUE_CAPACITY 100
-#define SHM_NAME "/log_queue_shm"
 
+#define MAX_MESSAGE_LENGTH 256
 #define MSG_PAYLOAD_SIZE 256
 #define MSG_QUEUE_CAPACITY 100
-#define MSG_SHM_NAME "/msg_queue_shm"
-#define MAX_GROUP_MEMBERS 100
-#define MAX_CONSUMER_OFFSETS 100
-#define MAX_MESSAGE_LENGTH 256
 
+#define SHM_NAME "/log_queue_shm"
+#define MSG_SHM_NAME "/msg_queue_shm"
+
+#define MAX_GROUP_MEMBERS 100
+
+#define MAX_CONSUMER_OFFSETS 100
+#define MAX_MESSAGE_HISTORY 1000
+
+#define THREAD_POOL_SIZE 50
+#define MAX_TOPIC_LEN 64
 
 // Message structures
 #pragma pack(push, 1)
@@ -43,14 +46,10 @@ typedef struct {
 } Message;
 #pragma pack(pop)
 
-
-
 // Maximum message history to keep in memory (for demo purposes) OFFSET
-#define MAX_MESSAGE_HISTORY 1000
 Message message_history[MAX_MESSAGE_HISTORY];
 int message_history_count = 0;
 pthread_mutex_t message_history_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 
 typedef struct {
     pthread_mutex_t mutex;
@@ -89,6 +88,7 @@ LogQueue *log_queue = NULL;
 pthread_t logger_thread;
 volatile sig_atomic_t running = 1;
 
+//Subcription structures
 typedef struct Subscription {
     int consumer_id;
     int socket_fd;
@@ -100,32 +100,7 @@ typedef struct Subscription {
 ConsumerSubscription *subscriptions = NULL; // Lista enlazada de suscripciones
 pthread_mutex_t subscription_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// // Consumer subscription structure
-// typedef struct {
-//     int consumer_id;
-//     int socket_fd;
-//     char topics[10][64];
-//     int topic_count;
-// } ConsumerSubscription;
-
-// ConsumerSubscription subscriptions[100];
-// int subscription_count = 0;
-// pthread_mutex_t subscription_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-
-// typedef struct {
-//     char topic[64];
-//     char group_id[64];
-//     int consumer_id; // ID del consumidor dentro del grupo
-//     int socket_fd;
-//     // ... otra información del consumidor en el grupo ...
-// } GroupMember;
-
-// GroupMember group_members[MAX_GROUP_MEMBERS];
-// pthread_mutex_t group_members_mutex = PTHREAD_MUTEX_INITIALIZER;
-// int num_group_members = 0;
-
-
+// Offset structures
 typedef struct ConsumerOffset {
     char topic[64];
     char group_id[64];
@@ -142,20 +117,7 @@ typedef struct {
 ConsumerOffset *consumer_offsets = NULL; // Lista enlazada de offsets
 pthread_mutex_t consumer_offsets_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// typedef struct {
-//     char topic[64];
-//     char group_id[64];
-//     int consumer_id; // ID del consumidor dentro del grupo
-//     long long last_consumed_offset; // ID del último mensaje consumido
-//     // ... otra información relacionada al offset ...
-// } ConsumerOffset;
-
-// ConsumerOffset consumer_offsets[MAX_CONSUMER_OFFSETS];
-// pthread_mutex_t consumer_offsets_mutex = PTHREAD_MUTEX_INITIALIZER;
-// int num_consumer_offsets = 0;
-
-
-// Estructura para mantener el estado del round-robin por grupo y tema
+//Grouping structures
 typedef struct {
     char topic[64];
     char group_id[64];
@@ -165,48 +127,6 @@ typedef struct {
 GroupDistributionState group_distribution_states[100]; // Ajusta el tamaño según sea necesario
 int num_group_distribution_states = 0;
 pthread_mutex_t group_distribution_state_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-
-
-// Function declarations
-void enqueue_log(const char *format, ...);
-bool dequeue_message(Message *out_msg);
-
-// Subscription functions
-void add_subscription(int consumer_id, int socket_fd, const char *topic, const char *group_id);
-
-void distribute_message(const char *topic, const char *message);
-
-// Thread para procesar mensajes y distribuirlos a los consumidores
-void *message_processor_thread(void *arg);
-
-// Manejador de señales
-void signal_handler(int signum);
-void cleanup_log_queue();
-int init_msg_queue();
-int init_log_queue();
-void enqueue_message(int producer_id, const char *topic, const char *payload);
-void enqueue_log(const char *format, ...);
-// bool dequeue_message(Message *out_msg);
-void *log_writer_thread(void *arg);
-void cleanup_msg_queue();
-void shutdown_logger();
-void *connection_handler_thread(void *arg);
-void *producer_handler_thread(void *arg);
-void *producer_handler_thread_fd(void *arg);
-int get_next_consumer_in_group(const char *topic, const char *group_id);
-void save_consumer_offsets();
-void send_messages_from_offset(int consumer_id, int client_fd, const char *topic, const char *group_id, long long start_offset);
-void store_message_in_history(const Message *msg);
-long long get_last_consumer_offset(const char *topic, const char *group_id, int consumer_id);
-
-
-void remove_subscription(int consumer_id, const char *topic);
-void remove_group_distribution_state(const char *topic, const char *group_id);
-long long get_group_last_offset(const char *topic, const char *group_id);
-void update_consumer_offset(const char *topic, const char *group_id, int consumer_id, long long message_id);
-void process_subscription_request(int consumer_id, int socket_fd, const char *topic, const char *group_id, long long start_offset);
-
 
 typedef struct GroupMember {
     char topic[64];
@@ -220,28 +140,14 @@ GroupMember *group_members = NULL; // Lista enlazada de miembros de grupo
 pthread_mutex_t group_members_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
+//Thread Pool structures
 
-//******************** T H R E A D   P O O L******************* */
-#include <stdlib.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <poll.h>
-#include <errno.h>
-
-#define THREAD_POOL_SIZE 50
-#define MAX_TOPIC_LEN 64
-
-// Tipos de tarea posibles
 typedef enum {
     TASK_SUBSCRIBE,
     TASK_UNSUBSCRIBE,
     TASK_PRODUCE
 } TaskType;
 
-// Datos de la tarea
 typedef struct {
     TaskType   type;
     int        client_fd;
@@ -251,13 +157,11 @@ typedef struct {
     long long  start_offset;
 } TaskData;
 
-// Nodo de la cola enlazada
 typedef struct TaskNode {
     TaskData       data;
     struct TaskNode *next;
 } TaskNode;
 
-// Cola de tareas
 typedef struct {
     TaskNode       *head;
     TaskNode       *tail;
@@ -266,21 +170,79 @@ typedef struct {
     bool             shutdown;
 } TaskQueue;
 
-// Pool de hilos
 typedef struct {
     pthread_t threads[THREAD_POOL_SIZE];
     TaskQueue queue;
 } ThreadPool;
 
-ThreadPool thread_pool;  // Definido en broker.c
+ThreadPool thread_pool;
 
-// Declara prototipos de funciones externas a usar en worker
-// extern void add_subscription(int consumer_id, int client_fd, const char *topic, const char *group_id);
-// extern void remove_subscription(int consumer_id, const char *topic);
-// extern void send_messages_from_offset(int consumer_id, int client_fd, const char *topic, const char *group_id, long long offset);
-// extern void producer_handler_thread(void *arg);
 
-// Inicializa la cola de tareas
+//Function prototypes
+void signal_handler(int signum);
+
+// Declaración del helper para leer N bytes
+static ssize_t read_n_bytes(int fd, void *buf, size_t count);
+
+//Thread Pool 
+void init_task_queue(TaskQueue *q);
+void enqueue_task_data(TaskQueue *q, TaskData *td);
+TaskNode *dequeue_task(TaskQueue *q);
+void *worker_loop(void *arg);
+void init_thread_pool(ThreadPool *p);
+void shutdown_thread_pool(ThreadPool *p);
+
+//Subscription 
+void add_subscription(int consumer_id, int socket_fd, const char *topic, const char *group_id);
+void remove_subscription(int consumer_id, const char *topic);
+void remove_group_distribution_state(const char *topic, const char *group_id);
+void process_subscription_request(int consumer_id, int socket_fd, const char *topic, const char *group_id, long long start_offset);
+
+//Messaging
+void *message_processor_thread(void *arg);
+int init_msg_queue();
+void distribute_message(const char *topic, const char *message);
+void enqueue_message(int producer_id, const char *topic, const char *payload);
+bool dequeue_message(Message *out_msg);
+void cleanup_msg_queue();
+
+//Logging
+void *log_writer_thread(void *arg);
+void cleanup_log_queue();
+int init_log_queue();
+void enqueue_log(const char *format, ...);
+void shutdown_logger();
+
+//Client connection
+void *connection_handler_thread(void *arg);
+void *producer_handler_thread(void *arg);
+void *producer_handler_thread_fd(void *arg);
+int get_next_consumer_in_group(const char *topic, const char *group_id);
+
+//Offsets 
+void save_consumer_offsets();
+void send_messages_from_offset(int consumer_id, int client_fd, const char *topic, const char *group_id, long long start_offset);
+long long get_group_last_offset(const char *topic, const char *group_id);
+void update_consumer_offset(const char *topic, const char *group_id, int consumer_id, long long message_id);
+void store_message_in_history(const Message *msg);
+long long get_last_consumer_offset(const char *topic, const char *group_id, int consumer_id);
+
+
+
+//================================ M E T H O D S ================================
+
+void signal_handler(int signum) {
+    running = 0;
+    save_consumer_offsets();
+    if (log_queue) {
+        save_consumer_offsets();
+        log_queue->shutdown = true;
+        pthread_cond_signal(&log_queue->not_empty);
+    }
+}
+
+//******************** T H R E A D   P O O L******************* */
+
 void init_task_queue(TaskQueue *q) {
     q->head = q->tail = NULL;
     q->shutdown = false;
@@ -288,7 +250,6 @@ void init_task_queue(TaskQueue *q) {
     pthread_cond_init(&q->not_empty, NULL);
 }
 
-// Encola una tarea
 void enqueue_task_data(TaskQueue *q, TaskData *td) {
     TaskNode *node = malloc(sizeof(*node));
     if (!node) {
@@ -306,7 +267,6 @@ void enqueue_task_data(TaskQueue *q, TaskData *td) {
     pthread_mutex_unlock(&q->mutex);
 }
 
-// Desencola una tarea o NULL si shutdown
 TaskNode *dequeue_task(TaskQueue *q) {
     pthread_mutex_lock(&q->mutex);
     while (!q->head && !q->shutdown) {
@@ -323,7 +283,6 @@ TaskNode *dequeue_task(TaskQueue *q) {
     return node;
 }
 
-// Loop de trabajo del worker
 void *worker_loop(void *arg) {
     TaskQueue *q = arg;
     while (true) {
@@ -349,7 +308,6 @@ void *worker_loop(void *arg) {
     return NULL;
 }
 
-// Inicializa el pool
 void init_thread_pool(ThreadPool *p) {
     init_task_queue(&p->queue);
     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
@@ -357,7 +315,6 @@ void init_thread_pool(ThreadPool *p) {
     }
 }
 
-// Apaga el pool limpiamente
 void shutdown_thread_pool(ThreadPool *p) {
     pthread_mutex_lock(&p->queue.mutex);
     p->queue.shutdown = true;
@@ -371,12 +328,12 @@ void shutdown_thread_pool(ThreadPool *p) {
     pthread_cond_destroy(&p->queue.not_empty);
 }
 
-
-  //************************ F I N    T H R E A D    P O O L ************** */
-
+//************************ F I N    T H R E A D    P O O L ************** */
 
 
-//************************* G R O U P    M E M B E R S***************** */
+
+//************************* G R O U P I N G ***************** */
+
 void add_group_member(const char *topic, const char *group_id, int consumer_id, int socket_fd) {
     pthread_mutex_lock(&group_members_mutex);
 
@@ -401,8 +358,6 @@ void add_group_member(const char *topic, const char *group_id, int consumer_id, 
     pthread_mutex_unlock(&group_members_mutex);
 }
 
-
-// Modified remove_group_member function to check if this was the last member
 void remove_group_member(const char *topic, const char *group_id, int consumer_id) {
     pthread_mutex_lock(&group_members_mutex);
 
@@ -458,8 +413,6 @@ void remove_group_member(const char *topic, const char *group_id, int consumer_i
     pthread_mutex_unlock(&group_members_mutex);
 }
 
-
-// Function to remove a distribution state when a group becomes empty
 void remove_group_distribution_state(const char *topic, const char *group_id) {
     pthread_mutex_lock(&group_distribution_state_mutex);
     
@@ -486,8 +439,6 @@ void remove_group_distribution_state(const char *topic, const char *group_id) {
     pthread_mutex_unlock(&group_distribution_state_mutex);
 }
 
-// This is the function you should call when a consumer disconnects
-// Función completa de manejar desconexión de consumidor
 void handle_consumer_disconnect(int consumer_id) {
     pthread_mutex_lock(&group_members_mutex);
     
@@ -529,7 +480,6 @@ void handle_consumer_disconnect(int consumer_id) {
                consumer_id, remove_count);
 }
 
-// Esta función debe ser llamada cuando se detecta una desconexión de socket
 void handle_socket_disconnect(int socket_fd) {
     pthread_mutex_lock(&group_members_mutex);
     
@@ -559,8 +509,8 @@ void handle_socket_disconnect(int socket_fd) {
     close(socket_fd);
 }
 
+//************************* F I N    G R O U P I N G ***************** */
 
-//************************* F I N    G R O U P    M E M B E R S***************** */
 
 
 //************************* S U B S C R I P T I O N S ***************** */
@@ -578,7 +528,6 @@ void process_subscription_request(int consumer_id, int socket_fd, const char *to
     // Registrar al consumidor en el grupo
     add_group_member(topic, group_id, consumer_id, socket_fd);
 }
-
 
 void add_subscription(int consumer_id, int socket_fd, const char *topic, const char *group_id) {
     pthread_mutex_lock(&subscription_mutex);
@@ -684,11 +633,8 @@ void remove_subscription(int consumer_id, const char *topic) {
 
 
 
-// Función para obtener el siguiente consumidor en un grupo (round-robin)
+//***************************** M E S S A G I N G ******************************** */
 
-
-// Helper: busca el consumer_id a partir del socket y el topic/grupo
-//METER EL CONSUMER ID EN EL LOG QUEUE
 static int find_consumer_id_by_socket(int sock, const char *topic, const char *group_id) {
     int cid = -1;
     pthread_mutex_lock(&group_members_mutex);
@@ -866,7 +812,6 @@ void *message_processor_thread(void *arg) {
     return NULL;
 }
 
-// Versión corregida de distribute_message
 void distribute_message(const char *topic, const char *message) {
     printf("DEBUG: Intentando distribuir mensaje para tópico '%s'\n", topic);
     enqueue_log("DEBUG: Intentando distribuir mensaje para tópico '%s'", topic);
@@ -998,27 +943,6 @@ void distribute_message(const char *topic, const char *message) {
     }
 }
 
-// Manejador de señales
-void signal_handler(int signum) {
-    running = 0;
-    save_consumer_offsets();
-    if (log_queue) {
-        save_consumer_offsets();
-        log_queue->shutdown = true;
-        pthread_cond_signal(&log_queue->not_empty);
-    }
-}
-
-void cleanup_log_queue() {
-    if (log_queue) {
-        pthread_mutex_destroy(&log_queue->mutex);
-        pthread_cond_destroy(&log_queue->not_empty);
-        pthread_cond_destroy(&log_queue->not_full);
-        munmap(log_queue, sizeof(LogQueue));
-        shm_unlink(SHM_NAME);
-    }
-}
-
 int init_msg_queue() {
     int fd = shm_open(MSG_SHM_NAME, O_CREAT | O_RDWR, 0666);
     if (fd == -1) {
@@ -1058,51 +982,6 @@ int init_msg_queue() {
     return 0;
 }
 
-int init_log_queue() {
-    int fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
-    if (fd == -1) {
-        perror("shm_open failed");
-        return -1;
-    }
-
-    if (ftruncate(fd, sizeof(LogQueue)) == -1) {
-        perror("ftruncate failed");
-        close(fd);
-        return -1;
-    }
-
-    log_queue = mmap(NULL, sizeof(LogQueue), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd);
-
-    if (log_queue == MAP_FAILED) {
-        perror("mmap failed");
-        return -1;
-    }
-
-    pthread_mutexattr_t mattr;
-    pthread_condattr_t cattr;
-
-    pthread_mutexattr_init(&mattr);
-    pthread_mutexattr_setpshared(&mattr, PTHREAD_PROCESS_SHARED);
-
-    pthread_condattr_init(&cattr);
-    pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED);
-
-    pthread_mutex_init(&log_queue->mutex, &mattr);
-    pthread_cond_init(&log_queue->not_empty, &cattr);
-    pthread_cond_init(&log_queue->not_full, &cattr);
-
-    pthread_mutexattr_destroy(&mattr);
-    pthread_condattr_destroy(&cattr);
-
-    log_queue->head = 0;
-    log_queue->tail = 0;
-    log_queue->count = 0;
-    log_queue->shutdown = false;
-
-    return 0;
-}
-
 void enqueue_message(int producer_id, const char *topic, const char *payload) {
     if (!msg_queue) return;
 
@@ -1123,79 +1002,24 @@ void enqueue_message(int producer_id, const char *topic, const char *payload) {
     pthread_mutex_unlock(&msg_queue->mutex);
     sem_post(&msg_queue->filled_slots); // Incrementa el contador de mensajes llenos
 }
-void enqueue_log(const char *format, ...) {
-    if (!log_queue) return;
 
-    pthread_mutex_lock(&log_queue->mutex);
+bool dequeue_message(Message *out_msg) {
+    if (!msg_queue || !out_msg) return false;
 
-    while (log_queue->count >= LOG_QUEUE_CAPACITY && !log_queue->shutdown) {
-        pthread_cond_wait(&log_queue->not_full, &log_queue->mutex);
-    }
+    sem_wait(&msg_queue->filled_slots); // Espera a que haya mensajes disponibles
+    pthread_mutex_lock(&msg_queue->mutex);
 
-    if (log_queue->shutdown) {
-        pthread_mutex_unlock(&log_queue->mutex);
-        return;
-    }
+    *out_msg = msg_queue->messages[msg_queue->head];
+    msg_queue->head = (msg_queue->head + 1) % MSG_QUEUE_CAPACITY;
+    msg_queue->count--;
 
-    log_queue->messages[log_queue->tail].timestamp = time(NULL);
+    pthread_mutex_unlock(&msg_queue->mutex);
+    sem_post(&msg_queue->empty_slots); // Incrementa el contador de espacios vacíos
 
-    va_list args;
-    va_start(args, format);
-    vsnprintf(log_queue->messages[log_queue->tail].message, LOG_MSG_SIZE - 1, format, args);
-    va_end(args);
-    log_queue->messages[log_queue->tail].message[LOG_MSG_SIZE - 1] = '\0';
+    // Almacenar el mensaje en el historial
+    store_message_in_history(out_msg);
 
-    log_queue->tail = (log_queue->tail + 1) % LOG_QUEUE_CAPACITY;
-    log_queue->count++;
-
-    pthread_cond_signal(&log_queue->not_empty);
-    pthread_mutex_unlock(&log_queue->mutex);
-}
-
-void *log_writer_thread(void *arg) {
-    FILE *logfile = fopen("broker.log", "a");
-    if (!logfile) {
-        perror("Error opening log file");
-        return NULL;
-    }
-
-    char timestamp_str[32];
-    struct tm *time_info;
-
-    while (running || (log_queue && log_queue->count > 0)) {
-        pthread_mutex_lock(&log_queue->mutex);
-
-        // Esperar hasta que haya mensajes o shutdown
-        while (log_queue->count == 0 && !log_queue->shutdown) {
-            pthread_cond_wait(&log_queue->not_empty, &log_queue->mutex);
-        }
-
-        // Salir si estamos en shutdown y no hay más mensajes
-        if (log_queue->count == 0 && log_queue->shutdown) {
-            pthread_mutex_unlock(&log_queue->mutex);
-            break;
-        }
-
-        // Tomar un mensaje de la cola
-        LogMessage msg = log_queue->messages[log_queue->head];
-        log_queue->head = (log_queue->head + 1) % LOG_QUEUE_CAPACITY;
-        log_queue->count--;
-
-        // Señalar que hay espacio disponible
-        pthread_cond_signal(&log_queue->not_full);
-        pthread_mutex_unlock(&log_queue->mutex);
-
-        // Formatear timestamp
-        time_info = localtime(&msg.timestamp);
-        strftime(timestamp_str, sizeof(timestamp_str), "%Y-%m-%d %H:%M:%S", time_info);
-
-        // Escribir en el archivo de log
-        fprintf(logfile, "[%s] %s\n", timestamp_str, msg.message);
-        fflush(logfile);
-    }
-
-    fclose(logfile);
-    return NULL;
+    return true;
 }
 
 void cleanup_msg_queue() {
@@ -1207,34 +1031,6 @@ void cleanup_msg_queue() {
         shm_unlink(MSG_SHM_NAME);
     }
 }
-
-void shutdown_logger() {
-    if (!log_queue) return;
-
-    // Señalizar shutdown y esperar a que el thread termine
-    pthread_mutex_lock(&log_queue->mutex);
-    log_queue->shutdown = true;
-    pthread_cond_signal(&log_queue->not_empty);
-    pthread_mutex_unlock(&log_queue->mutex);
-
-    // Esperar a que el thread de logging termine
-    pthread_join(logger_thread, NULL);
-
-    // Limpiar recursos
-    cleanup_log_queue();
-}
-
-// Función para manejar las conexiones de clientes (productores y consumidores)
-// Modify the connection_handler_thread function to handle subscription with offset
-// Modify the connection handler to use the thread pool
-// connection_handler_thread.c
-// Maneja conexiones entrantes: consumidores via thread pool, productores con hilo dedicado
-
-// connection_handler_thread.c
-// Maneja conexiones entrantes: consumidores via thread pool, productores con hilo dedicado
-
-// Declaración del helper para leer N bytes
-static ssize_t read_n_bytes(int fd, void *buf, size_t count);
 
 void *connection_handler_thread(void *arg) {
     int server_fd = *((int *)arg);
@@ -1313,7 +1109,6 @@ void *connection_handler_thread(void *arg) {
     return NULL;
 }
 
-// Implementación del helper read_n_bytes
 static ssize_t read_n_bytes(int fd, void *buf, size_t count) {
     size_t total = 0;
     while (total < count) {
@@ -1324,9 +1119,6 @@ static ssize_t read_n_bytes(int fd, void *buf, size_t count) {
     return (ssize_t)total;
 }
 
-
-// Función para manejar un productor conectado
-//se cambio de void* a void * para poder usar el thread pool
 void *producer_handler_thread_fd(void *arg) {
     // 1. Recuperar los datos
     ProdArg *p = (ProdArg *)arg;
@@ -1375,10 +1167,165 @@ void *producer_handler_thread_fd(void *arg) {
     close(client_fd);
     return NULL;
 }
+
+//************************* F I N   M E S S A G I N G ***************** */
+
+
+
+//************************* L O G G I N G ***************** */
+
+void *log_writer_thread(void *arg) {
+    FILE *logfile = fopen("broker.log", "a");
+    if (!logfile) {
+        perror("Error opening log file");
+        return NULL;
+    }
+
+    char timestamp_str[32];
+    struct tm *time_info;
+
+    while (running || (log_queue && log_queue->count > 0)) {
+        pthread_mutex_lock(&log_queue->mutex);
+
+        // Esperar hasta que haya mensajes o shutdown
+        while (log_queue->count == 0 && !log_queue->shutdown) {
+            pthread_cond_wait(&log_queue->not_empty, &log_queue->mutex);
+        }
+
+        // Salir si estamos en shutdown y no hay más mensajes
+        if (log_queue->count == 0 && log_queue->shutdown) {
+            pthread_mutex_unlock(&log_queue->mutex);
+            break;
+        }
+
+        // Tomar un mensaje de la cola
+        LogMessage msg = log_queue->messages[log_queue->head];
+        log_queue->head = (log_queue->head + 1) % LOG_QUEUE_CAPACITY;
+        log_queue->count--;
+
+        // Señalar que hay espacio disponible
+        pthread_cond_signal(&log_queue->not_full);
+        pthread_mutex_unlock(&log_queue->mutex);
+
+        // Formatear timestamp
+        time_info = localtime(&msg.timestamp);
+        strftime(timestamp_str, sizeof(timestamp_str), "%Y-%m-%d %H:%M:%S", time_info);
+
+        // Escribir en el archivo de log
+        fprintf(logfile, "[%s] %s\n", timestamp_str, msg.message);
+        fflush(logfile);
+    }
+
+    fclose(logfile);
+    return NULL;
+}
+
+int init_log_queue() {
+    int fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+    if (fd == -1) {
+        perror("shm_open failed");
+        return -1;
+    }
+
+    if (ftruncate(fd, sizeof(LogQueue)) == -1) {
+        perror("ftruncate failed");
+        close(fd);
+        return -1;
+    }
+
+    log_queue = mmap(NULL, sizeof(LogQueue), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+
+    if (log_queue == MAP_FAILED) {
+        perror("mmap failed");
+        return -1;
+    }
+
+    pthread_mutexattr_t mattr;
+    pthread_condattr_t cattr;
+
+    pthread_mutexattr_init(&mattr);
+    pthread_mutexattr_setpshared(&mattr, PTHREAD_PROCESS_SHARED);
+
+    pthread_condattr_init(&cattr);
+    pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED);
+
+    pthread_mutex_init(&log_queue->mutex, &mattr);
+    pthread_cond_init(&log_queue->not_empty, &cattr);
+    pthread_cond_init(&log_queue->not_full, &cattr);
+
+    pthread_mutexattr_destroy(&mattr);
+    pthread_condattr_destroy(&cattr);
+
+    log_queue->head = 0;
+    log_queue->tail = 0;
+    log_queue->count = 0;
+    log_queue->shutdown = false;
+
+    return 0;
+}
+
+void enqueue_log(const char *format, ...) {
+    if (!log_queue) return;
+
+    pthread_mutex_lock(&log_queue->mutex);
+
+    while (log_queue->count >= LOG_QUEUE_CAPACITY && !log_queue->shutdown) {
+        pthread_cond_wait(&log_queue->not_full, &log_queue->mutex);
+    }
+
+    if (log_queue->shutdown) {
+        pthread_mutex_unlock(&log_queue->mutex);
+        return;
+    }
+
+    log_queue->messages[log_queue->tail].timestamp = time(NULL);
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(log_queue->messages[log_queue->tail].message, LOG_MSG_SIZE - 1, format, args);
+    va_end(args);
+    log_queue->messages[log_queue->tail].message[LOG_MSG_SIZE - 1] = '\0';
+
+    log_queue->tail = (log_queue->tail + 1) % LOG_QUEUE_CAPACITY;
+    log_queue->count++;
+
+    pthread_cond_signal(&log_queue->not_empty);
+    pthread_mutex_unlock(&log_queue->mutex);
+}
+
+void shutdown_logger() {
+    if (!log_queue) return;
+
+    // Señalizar shutdown y esperar a que el thread termine
+    pthread_mutex_lock(&log_queue->mutex);
+    log_queue->shutdown = true;
+    pthread_cond_signal(&log_queue->not_empty);
+    pthread_mutex_unlock(&log_queue->mutex);
+
+    // Esperar a que el thread de logging termine
+    pthread_join(logger_thread, NULL);
+
+    // Limpiar recursos
+    cleanup_log_queue();
+}
+
+void cleanup_log_queue() {
+    if (log_queue) {
+        pthread_mutex_destroy(&log_queue->mutex);
+        pthread_cond_destroy(&log_queue->not_empty);
+        pthread_cond_destroy(&log_queue->not_full);
+        munmap(log_queue, sizeof(LogQueue));
+        shm_unlink(SHM_NAME);
+    }
+}
+
+//************************* F I N   L O G G I N G ***************** */
+
+
+
 //************************* O F F S E T S ***************** */
 
-
-// Store the offset for a consumer group
 void update_consumer_offset(const char *topic, const char *group_id, int consumer_id, long long message_id) {
     pthread_mutex_lock(&consumer_offsets_mutex);
 
@@ -1428,7 +1375,6 @@ void update_consumer_offset(const char *topic, const char *group_id, int consume
     pthread_mutex_unlock(&consumer_offsets_mutex);
 }
 
-// Get the last consumed offset for a consumer group
 long long get_last_consumer_offset(const char *topic, const char *group_id, int consumer_id) {
     pthread_mutex_lock(&consumer_offsets_mutex);
 
@@ -1447,7 +1393,6 @@ long long get_last_consumer_offset(const char *topic, const char *group_id, int 
     return -1; // No se encontró el offset
 }
 
-// Get the last consumed offset for an entire consumer group
 long long get_group_last_offset(const char *topic, const char *group_id) {
     pthread_mutex_lock(&consumer_offsets_mutex);
 
@@ -1468,7 +1413,6 @@ long long get_group_last_offset(const char *topic, const char *group_id) {
     return max_offset;
 }
 
-// Function to save consumer offsets periodically or on shutdown
 void save_consumer_offsets() {
     FILE *offset_file = fopen("consumer_offsets.dat", "w");
     if (!offset_file) {
@@ -1494,7 +1438,6 @@ void save_consumer_offsets() {
     // enqueue_log("Consumer offsets saved to file");
 }
 
-// Function to load consumer offsets on startup
 void load_consumer_offsets() {
     FILE *offset_file = fopen("consumer_offsets.dat", "r");
     if (!offset_file) {
@@ -1535,7 +1478,6 @@ void load_consumer_offsets() {
     // enqueue_log("Loaded consumer offsets from file");
 }
 
-// Function to send messages from a specific offset
 void send_messages_from_offset(int consumer_id, int client_fd, const char *topic, const char *group_id, long long start_offset) {
     pthread_mutex_lock(&message_history_mutex);
     
@@ -1557,11 +1499,6 @@ void send_messages_from_offset(int consumer_id, int client_fd, const char *topic
     //            count_sent, consumer_id, topic, start_offset);
 }
 
-
-//************************* F I N  O F F S E T S ***************** */
-
-
-// Function to store messages in history
 void store_message_in_history(const Message *msg) {
     pthread_mutex_lock(&message_history_mutex);
 
@@ -1579,27 +1516,7 @@ void store_message_in_history(const Message *msg) {
     pthread_mutex_unlock(&message_history_mutex);
 }
 
-// Modify the dequeue_message function to store messages in history
-bool dequeue_message(Message *out_msg) {
-    if (!msg_queue || !out_msg) return false;
-
-    sem_wait(&msg_queue->filled_slots); // Espera a que haya mensajes disponibles
-    pthread_mutex_lock(&msg_queue->mutex);
-
-    *out_msg = msg_queue->messages[msg_queue->head];
-    msg_queue->head = (msg_queue->head + 1) % MSG_QUEUE_CAPACITY;
-    msg_queue->count--;
-
-    pthread_mutex_unlock(&msg_queue->mutex);
-    sem_post(&msg_queue->empty_slots); // Incrementa el contador de espacios vacíos
-
-    // Almacenar el mensaje en el historial
-    store_message_in_history(out_msg);
-
-    return true;
-}
-
-
+//************************* F I N  O F F S E T S ***************** */
 
 int main() {
     // Variables para hilos
