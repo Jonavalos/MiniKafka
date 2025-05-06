@@ -14,8 +14,8 @@
 #include <arpa/inet.h>
 #include <stdarg.h>
 #include <poll.h>
-#include <asm-generic/socket.h>  // Necesario para SO_REUSEPORT en algunas configuraciones
-#include <sys/time.h>  // Para struct timeval
+#include <asm-generic/socket.h>
+#include <sys/time.h>
 #include <semaphore.h>
 
 #define LOG_MSG_SIZE 256
@@ -46,7 +46,6 @@ typedef struct {
 } Message;
 #pragma pack(pop)
 
-// Maximum message history to keep in memory (for demo purposes) OFFSET
 Message message_history[MAX_MESSAGE_HISTORY];
 int message_history_count = 0;
 pthread_mutex_t message_history_mutex = PTHREAD_MUTEX_INITIALIZER;
