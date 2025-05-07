@@ -1,67 +1,64 @@
 #!/usr/bin/env bash
 
-# =========================================================
-# Script para compilar y ejecutar el broker, consumer y producer
-# =========================================================
+set -euo pipefail
 
-# Compilar los ejecutables
+# 1) Compilar
 echo "Compilando broker, consumer y producer..."
-gcc -o broker ../src/broker.c -lpthread
-if [ $? -ne 0 ]; then
-  echo "Error compilando broker"
-  exit 1
-fi
-# gcc -o consumer ../src/consumer.c -lpthread
-# if [ $? -ne 0 ]; then
-#   echo "Error compilando consumer"
-#   exit 1
-# fi
-gcc -o producer ../src/producer.c -lpthread
-if [ $? -ne 0 ]; then
-  echo "Error compilando producer"
-  exit 1
-fi
+gcc -o broker ../src/broker.c -lpthread && echo "Broker OK" || { echo "Error broker"; exit 1; }
+gcc -o consumer ../src/consumer.c -lpthread && echo "Consumer OK" || { echo "Error consumer"; exit 1; }
+gcc -o producer ../src/producer.c -lpthread && echo "Producer OK" || { echo "Error producer"; exit 1; }
 
-echo "Compilación completada."
+# 2) Parámetros fijos
+TOPIC="noticias"
+GRUPOS=("g1" "g2" "g3")
 
-# Verificar argumentos
-if [ $# -ne 4 ]; then
-  echo "Uso: $0 <consumer_id> <topic> <group_id> <producer_id>"
-  echo "  <consumer_id>  : ID numérico para el consumer"
-  echo "  <topic>        : Topic compartido (mismo para consumer y producer)"
-  echo "  <group_id>     : Nombre del grupo (cualquier cadena)"
-  echo "  <producer_id>  : ID numérico para el producer"
-  exit 1
-fi
+# Depuración - ver qué contiene GRUPOS
+echo "DEBUG: Contenido de GRUPOS:"
+for ((i=0; i<${#GRUPOS[@]}; i++)); do
+  echo "  GRUPOS[$i] = '${GRUPOS[$i]}'"
+done
 
-CONSUMER_ID=$1
-TOPIC=$2
-GROUP_ID=$3
-PRODUCER_ID=$4
+NUM=5               # número de consumers y producers
 
-# Lanzar broker en segundo plano
+# 3) Arreglo de PIDs
+PIDS=()
+
+cleanup() {
+  echo
+  echo "Deteniendo todo..."
+  for pid in "${PIDS[@]}"; do kill "$pid" &>/dev/null || true; done
+  exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+# 4) Lanzar broker
 echo "Iniciando broker..."
-../src/broker &
-BROKER_PID=$!
-
-# Pequeña pausa para asegurar que el broker esté listo
+./broker &
+PIDS+=("$!")
 sleep 1
 
-# Lanzar consumer en segundo plano
-echo "Iniciando consumer (ID=${CONSUMER_ID}, topic=${TOPIC}, grupo=${GROUP_ID})..."
-../src/consumer ${CONSUMER_ID} ${TOPIC} ${GROUP_ID} &
-CONSUMER_PID=$!
+# Mensaje modificado para evitar problemas de expansión
+echo "Iniciando $NUM consumers para topic='$TOPIC', grupos: g1, g2, g3..."
 
-# Pequeña pausa para estabilizar
-sleep 1
+# 5) Lanzar consumers
+for ((i=1; i<=NUM; i++)); do
+  idx=$(( (i-1) % ${#GRUPOS[@]} ))
+  grp="${GRUPOS[$idx]}"
+  echo "  → Consumer ID=$i, Grupo=$grp"
+  ./consumer "$i" "$TOPIC" "$grp" &
+  PIDS+=("$!")
+  sleep 0.2
+done
 
-# Lanzar producer en primer plano
-echo "Iniciando producer (ID=${PRODUCER_ID}, topic=${TOPIC})..."
-../src/producer ${PRODUCER_ID} ${TOPIC}
+# 6) Lanzar producers
+echo "Iniciando $NUM producers para topic='$TOPIC'..."
+for ((i=1; i<=NUM; i++)); do
+  echo "  → Producer ID=$i"
+  ./producer "$i" "$TOPIC" &
+  PIDS+=("$!")
+  sleep 0.2
+done
 
-# Cuando el producer termine, cerramos todo
-echo "Producer finalizó, deteniendo broker y consumer..."
-kill ${BROKER_PID}
-kill ${CONSUMER_PID}
-
-echo "Todos los procesos detenidos. Fin del script."
+echo
+echo "Todo lanzado. Presiona Ctrl+C para parar."
+wait
