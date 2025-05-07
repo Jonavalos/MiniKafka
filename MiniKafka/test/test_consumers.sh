@@ -9,7 +9,7 @@ set -euo pipefail
 # Parámetros fijos
 TOPIC="noticias"
 GRUPOS=("g1" "g2" "g3")
-NUM=5  # número de consumers
+NUM=1000  # número de consumers
 
 # Arreglo de PIDs
 CONSUMER_PIDS=()
@@ -43,7 +43,7 @@ for ((i=1; i<=NUM; i++)); do
   echo "  → Consumer ID=$i, Grupo=$grp"
 ./consumer "$i" "$TOPIC" "$grp" < /dev/null &
   CONSUMER_PIDS+=("$!")
-  sleep 0.2  # Pausa breve entre lanzamientos
+  #sleep 0.2  # Pausa breve entre lanzamientos
 done
 
 echo -e "\nTodos los consumers ($NUM) están activos. Presiona Ctrl+C para detenerlos."

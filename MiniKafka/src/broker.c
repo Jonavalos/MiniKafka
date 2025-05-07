@@ -28,7 +28,7 @@
 #define SHM_NAME "/log_queue_shm"
 #define MSG_SHM_NAME "/msg_queue_shm"
 
-#define MAX_GROUP_MEMBERS 100
+#define MAX_GROUP_MEMBERS 340
 
 #define MAX_MESSAGE_HISTORY 1000
 

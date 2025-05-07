@@ -585,6 +585,15 @@ El sistema de message broker, tal como está implementado, presenta ciertas limi
 
     Un consumidor no podrá suscribirse a más de 10 temas simultáneamente.
 
-* **Miembros por Grupo:** La implementación de grupos de consumidores podría tener limitaciones implícitas en la forma en que se gestionan los miembros dentro de un grupo, aunque no se define una constante explícita para el número máximo de miembros por grupo en las estructuras proporcionadas. Sin embargo, la lógica de distribución dentro de los grupos podría tener consideraciones de eficiencia con un número muy grande de miembros.
+* **Miembros por Grupo:** La implementación de grupos de consumidores podría tener limitaciones implícitas en la forma en que se gestionan los miembros dentro de un grupo, se define `MAX_GROUP_MEMBERS`como la cantidad maxima de miembros que puede tener un grupo. Actualmente tiene un valor de 340 ya que se hicieron pruebas con 1000 consumers y 1000 producers (esto por los limites de la computadora usada para programar y testear). 
 
-Es importante tener en cuenta estas limitaciones al diseñar la arquitectura y el despliegue del sistema de message broker, y considerar si es necesario ajustar estas limitaciones en función de los requisitos específicos de la aplicación.
+
+**Consideraciones Adicionales y Resultados de Pruebas**
+
+Es fundamental tener en cuenta las limitaciones mencionadas anteriormente al diseñar e implementar el sistema de message broker. La adaptación de estas limitaciones a los requisitos específicos de cada aplicación es crucial para garantizar un funcionamiento óptimo.
+
+En particular, se realizaron pruebas exhaustivas con 1000 productores y 1000 consumidores concurrentes para evaluar la robustez y la capacidad del sistema. En estas pruebas, se transmitieron exitosamente un total de 3000 mensajes (1000 mensajes por cada uno de los tres grupos de consumidores) sin que se registrara ninguna pérdida de datos. La integridad de los datos fue verificada tanto por la cantidad de líneas en los logs como mediante el análisis asistido por IA.
+
+Para lograr la ejecución exitosa de estas pruebas de alta concurrencia, fue necesario aumentar el límite del número de file descriptors disponibles en el sistema operativo de 1024 a 2048. Esto subraya la importancia de considerar y ajustar los límites del sistema operativo (como se mencionó en la sección anterior sobre "Limitaciones del Programa") para soportar cargas de trabajo elevadas.
+
+Los resultados detallados de estas pruebas se encuentran disponibles en el archivo `broker.log`. Este archivo contiene, además de la información de registro solicitada, mensajes de DEBUG adicionales que proporcionan una visión más profunda y detallada del comportamiento interno del programa durante las pruebas. Esta información de depuración puede ser valiosa para el análisis de rendimiento, la resolución de problemas y la optimización del sistema. Los mensajes de DEBUG van a encontrarse comentados a lo largo del codigo para que a la hora de hacer nuevas pruebas, no interfieran con los requerimientos dados por el profesor.
