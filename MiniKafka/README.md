@@ -1,3 +1,26 @@
+
+## Librerías Utilizadas
+
+* `stdio.h`: Para operaciones de entrada/salida estándar como `printf`, `fprintf` y `perror`.
+* `stdlib.h`: Para funciones de utilidad general como `malloc`, `free`, `atoi` y `exit`.
+* `string.h`: Para manipulación de cadenas de caracteres como `strcpy`, `strncpy`, `strcmp` y `strlen`.
+* `pthread.h`: Para la creación y gestión de threads (hilos), esencial para manejar múltiples conexiones de clientes concurrentemente.
+* `fcntl.h`: Para operaciones de control de archivos, incluyendo la creación de archivos con permisos específicos (podría usarse para persistencia, aunque no se vea directamente en los includes).
+* `sys/mman.h`: Para la gestión de memoria mapeada (`mmap`), que podría utilizarse para compartir datos entre procesos o para persistencia eficiente.
+* `unistd.h`: Para funciones del sistema operativo como `sleep`, `close` y `unlink`.
+* `stdbool.h`: Para el tipo de dato booleano (`bool`) y sus valores (`true`, `false`).
+* `signal.h`: Para el manejo de señales del sistema, permitiendo una terminación limpia del broker.
+* `time.h`: Para funciones relacionadas con el tiempo, como `time` y `nanosleep` (podría usarse para temporizadores o gestión de inactividad).
+* `errno.h`: Para el manejo de errores a través de la variable global `errno`.
+* `sys/socket.h`: Para la creación y manipulación de sockets, la base de la comunicación en red.
+* `netinet/in.h`: Para las estructuras de direcciones de internet (IPv4 e IPv6).
+* `arpa/inet.h`: Para funciones de conversión de direcciones IP (entre formato numérico y presentación).
+* `stdarg.h`: Para funciones que aceptan un número variable de argumentos (como `vprintf` o una función de logging personalizada).
+* `poll.h`: Para la función `poll`, que permite esperar eventos en múltiples descriptores de archivo (sockets) de manera eficiente.
+* `asm-generic/socket.h`: Define constantes genéricas para sockets (generalmente incluido a través de `sys/socket.h`, su inclusión directa podría indicar un uso más específico de funcionalidades de bajo nivel de sockets).
+* `sys/time.h`: Para estructuras y funciones relacionadas con el tiempo, como `gettimeofday` (para obtener la hora actual con alta precisión).
+* `semaphore.h`: Para la creación y manipulación de semáforos, mecanismos de sincronización entre threads o procesos.
+
 # 📦 Estructuras
 
 ## Message
@@ -220,3 +243,183 @@ Manejo de errores
 - Si alguna de las operaciones de inicialización falla, se procede a limpiar los recursos previamente asignados antes de salir del programa con un código de error. En caso de éxito, se termina correctamente con un valor de retorno 0.
 
 Este flujo garantiza que el broker maneje de manera eficiente y segura la comunicación con los productores y consumidores, manteniendo un manejo robusto de los recursos y permitiendo una desconexión ordenada cuando sea necesario.
+
+
+
+
+
+
+
+
+
+
+
+
+# Producer del Message Broker
+
+Este es un productor simple para un sistema de message broker. Se conecta al broker, especifica un tema, y luego envía un único mensaje predefinido a ese tema.
+
+## Funcionalidades
+
+* **Especificación de Tema:** Permite definir el tema al cual el productor enviará el mensaje al iniciar.
+* **Identificación del Productor:** Envía un ID único para identificarse ante el broker.
+* **Envío de Mensaje Único:** Envía un único mensaje con un payload predefinido al tema especificado.
+* **Manejo de Señales:** Implementa un manejador de señales para cerrar la conexión con el broker de manera limpia al recibir señales de interrupción (`SIGINT`) o terminación (`SIGTERM`).
+* **Función de Envío Segura:** Utiliza una función (`send_all`) para asegurar que todos los bytes del mensaje se envíen correctamente.
+
+## Cómo Compilar y Ejecutar
+
+1.  **Guardar el código:** Guarda el código fuente en un archivo llamado `producer.c`.
+2.  **Compilar:** Abre una terminal y utiliza un compilador de C (como GCC) para compilar el código:
+    ```bash
+    gcc producer.c -o producer
+    ```
+3.  **Ejecutar:** Ejecuta el productor desde la terminal, proporcionando el ID del productor y el tema al que deseas enviar el mensaje:
+    ```bash
+    ./producer <producer_id> <topic>
+    ```
+    * `<producer_id>`: Un número entero que identifica a este productor.
+    * `<topic>`: El nombre del tema al que deseas enviar el mensaje.
+
+    **Ejemplos de ejecución:**
+    * Productor con ID 1 enviando al tema "noticias":
+        ```bash
+        ./producer 1 noticias
+        ```
+    * Productor con ID 2 enviando al tema "eventos":
+        ```bash
+        ./producer 2 eventos
+        ```
+
+## Detalles del Código
+
+* **`#include`s:** Incluye las bibliotecas necesarias para operaciones de entrada/salida, manejo de memoria, manipulación de strings, sockets, redes y señales. La inclusión de `<time.h>` es actualmente opcional ya que `nanosleep()` no se utiliza en la versión actual del código.
+* **`MSG_PAYLOAD_SIZE`:** Define el tamaño máximo del payload de un mensaje.
+* **`MAX_MESSAGES_PER_SECOND`:** Define un límite en la frecuencia de envío de mensajes (actualmente no se aplica en la lógica principal de envío único).
+* **`Message` struct:** Define la estructura de un mensaje, que debe coincidir con la definición en el broker. Incluye el ID del mensaje, el ID del productor, el tema y el payload. Se utiliza `#pragma pack(push, 1)` y `#pragma pack(pop)` para asegurar que la estructura se empaquete sin padding, lo cual es crucial para la comunicación binaria a través de la red.
+* **Variables Globales:**
+    * `running`: Un flag volátil para controlar el bucle principal (aunque en este productor de envío único, su uso es principalmente para la respuesta a señales).
+* **`signal_handler()`:** Función que se ejecuta cuando se recibe una señal `SIGINT` o `SIGTERM`. Establece `running` en 0 para indicar que el programa debe finalizar.
+* **`send_all()`:** Función para enviar todos los bytes de un buffer a través del socket. Intenta reenviar los bytes restantes en caso de interrupción (`EINTR`). Devuelve el número total de bytes enviados o -1 en caso de error. Se incluye un `printf` de depuración para mostrar la cantidad de bytes enviados.
+* **`main()`:**
+    * **Manejo de Argumentos:** Analiza los argumentos de la línea de comandos para obtener el ID del productor y el tema.
+    * **Configuración del Socket:** Crea un socket TCP.
+    * **Configuración de la Dirección del Servidor:** Establece la dirección IP y el puerto del broker (actualmente codificados como `127.0.0.1:8080`).
+    * **Conexión al Broker:** Intenta establecer una conexión con el broker.
+    * **Envío del Tipo de Cliente:** Envía un entero `1` al broker para indicar que este cliente es un productor.
+    * **Envío del ID del Productor:** Envía el ID del productor al broker.
+    * **Creación y Envío del Mensaje:**
+        * Inicializa una estructura `Message`.
+        * Asigna el ID del productor al campo `id` del mensaje (podría ser un identificador de mensaje único generado de otra manera en un productor más complejo).
+        * Establece el `producer_id`.
+        * Copia el tema proporcionado por el usuario al campo `topic`.
+        * Define un payload estático: `"Mensaje del productor <producer_id>"`.
+        * Realiza una validación básica para asegurar que el `topic` y el `payload` no estén vacíos.
+        * Utiliza la función `send_all()` para enviar la estructura `Message` completa al broker.
+    * **Finalización:** Cierra el socket después de enviar el mensaje (o si ocurre un error).
+
+## Consideraciones
+
+* **Envío Único:** Este productor está diseñado para enviar un único mensaje y luego finalizar. Un productor más complejo podría enviar múltiples mensajes en un bucle continuo o responder a eventos externos.
+* **Contador de Secuencia:** La variable `seq` está declarada pero no se utiliza en la lógica actual de envío único. En un productor que envía múltiples mensajes, podría usarse para generar IDs de mensaje secuenciales.
+* **Límite de Frecuencia:** La constante `MAX_MESSAGES_PER_SECOND` está definida pero no se aplica en la lógica de envío único. Sería relevante en un productor que envía mensajes de forma continua para evitar sobrecargar el broker.
+* **Manejo de Errores:** El código incluye cierto manejo de errores (por ejemplo, al crear el socket, conectar y enviar), pero podría mejorarse para ser más robusto.
+* **Formato del Mensaje:** El productor envía la estructura `Message` completa al broker. El broker debe estar preparado para recibir y procesar mensajes en este formato binario.
+* **Confirmaciones (Opcional):** Para una mayor fiabilidad, un productor más avanzado podría esperar confirmaciones del broker para asegurar que los mensajes se han recibido correctamente.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Consumer
+
+Este es un consumidor simple para un sistema de message broker. Se conecta al broker, se suscribe a un tema específico (opcionalmente dentro de un grupo de consumidores), y recibe los mensajes publicados en ese tema.
+
+## Funcionalidades
+
+* **Suscripción a Temas:** Permite especificar el tema al cual el consumidor desea suscribirse al iniciar.
+* **Grupos de Consumidores (Opcional):** Soporta la pertenencia a un grupo de consumidores, lo que permite el balanceo de carga de mensajes entre los consumidores del mismo grupo.
+* **Consumo desde Offset Específico (Opcional):** Permite especificar un offset desde el cual comenzar a consumir mensajes. Las opciones incluyen:
+    * `-1`: Consumir solo los mensajes más recientes publicados después de la suscripción.
+    * `0`: Consumir todos los mensajes disponibles para el tema desde el inicio.
+    * `n`: Consumir a partir del mensaje con el ID (offset) `n`.
+* **Recepción Asíncrona:** Utiliza un thread separado para recibir mensajes del broker, lo que permite que el programa principal siga funcionando y responda a comandos del usuario.
+* **Manejo de Señales:** Implementa un manejador de señales para cerrar la conexión con el broker de manera limpia al recibir señales de interrupción (`SIGINT`) o terminación (`SIGTERM`).
+* **Comando de Salida:** Proporciona un comando (`quit`) para desconectar del broker y finalizar el consumidor de forma controlada.
+
+## Cómo Compilar y Ejecutar
+
+1.  **Guardar el código:** Guarda el código fuente en un archivo llamado `consumer.c`.
+2.  **Compilar:** Abre una terminal y utiliza un compilador de C (como GCC) para compilar el código:
+    ```bash
+    gcc consumer.c -o consumer -pthread
+    ```
+    El flag `-pthread` es necesario para habilitar el soporte de threads.
+3.  **Ejecutar:** Ejecuta el consumidor desde la terminal, proporcionando el ID del consumidor y el tema al que deseas suscribirte. Opcionalmente, puedes especificar un `group_id` y un `start_offset`:
+    ```bash
+    ./consumer <consumer_id> <topic> [group_id] [start_offset]
+    ```
+    * `<consumer_id>`: Un número entero que identifica a este consumidor.
+    * `<topic>`: El nombre del tema al que deseas suscribirte.
+    * `[group_id]` (opcional): El ID del grupo de consumidores al que pertenece este consumidor.
+    * `[start_offset]` (opcional): El offset del mensaje desde el cual comenzar a consumir.
+
+    **Ejemplos de ejecución:**
+    * Consumidor con ID 1, suscrito al tema "noticias":
+        ```bash
+        ./consumer 1 noticias
+        ```
+    * Consumidor con ID 2, suscrito al tema "eventos" y perteneciente al grupo "grupo-a":
+        ```bash
+        ./consumer 2 eventos grupo-a
+        ```
+    * Consumidor con ID 3, suscrito al tema "temperaturas" y consumiendo desde el inicio:
+        ```bash
+        ./consumer 3 temperaturas "" 0
+        ```
+    * Consumidor con ID 4, suscrito al tema "logs" y consumiendo solo los mensajes más recientes:
+        ```bash
+        ./consumer 4 logs grupo-b -1
+        ```
+
+## Detalles del Código
+
+* **`#include`s:** Incluye las bibliotecas necesarias para operaciones de entrada/salida, manejo de memoria, manipulación de strings, sockets, redes, señales y threads.
+* **`MSG_PAYLOAD_SIZE`:** Define el tamaño máximo del payload de un mensaje.
+* **`Message` struct:** Define la estructura de un mensaje, que debe coincidir con la definición en el broker. Incluye el ID del mensaje (offset), el ID del productor, el tema y el payload. Se utiliza `#pragma pack(push, 1)` y `#pragma pack(pop)` para asegurar que la estructura se empaquete sin padding, lo cual es crucial para la comunicación binaria a través de la red.
+* **Variables Globales:**
+    * `running`: Un flag volátil para controlar el bucle principal y los threads.
+    * `sock`: El descriptor del socket de conexión con el broker.
+    * `consumer_id`: El ID de este consumidor.
+    * `topic`: El tema al que está suscrito este consumidor.
+    * `group_id`: El ID del grupo de consumidores (puede estar vacío).
+* **`send_unsubscribe_message()`:** Función para enviar una solicitud de "desuscripción" al broker (implementada como un cierre de socket con `SO_LINGER` para descartar cualquier dato pendiente).
+* **`signal_handler()`:** Función que se ejecuta cuando se recibe una señal `SIGINT` o `SIGTERM`. Cierra la conexión con el broker y establece `running` en 0 para finalizar el programa.
+* **`receive_messages()`:** Función que se ejecuta en un thread separado. Lee continuamente los mensajes del socket y los imprime en la consola. Maneja el cierre de la conexión por parte del broker y errores de lectura.
+* **`main()`:**
+    * **Manejo de Argumentos:** Analiza los argumentos de la línea de comandos para obtener el ID del consumidor, el tema, el grupo (opcional) y el offset de inicio (opcional).
+    * **Configuración del Socket:** Crea un socket TCP.
+    * **Configuración de la Dirección del Servidor:** Establece la dirección IP y el puerto del broker (actualmente codificados como `127.0.0.1:8080`).
+    * **Conexión al Broker:** Intenta establecer una conexión con el broker.
+    * **Envío de Solicitud de Suscripción:** Envía un mensaje al broker con el formato `SUBSCRIBE:<consumer_id>:<topic>:<group_id>[:start_offset]` para indicar el tema al que desea suscribirse (incluyendo el grupo y el offset si se proporcionaron).
+    * **Creación del Thread de Recepción:** Crea un nuevo thread que ejecuta la función `receive_messages` para recibir los mensajes del broker de forma asíncrona.
+    * **Interfaz de Comandos del Usuario:** Entra en un bucle donde espera comandos del usuario desde la entrada estándar. Actualmente, solo se admite el comando `quit` para salir.
+    * **Finalización:** Cuando el usuario ingresa `quit` o se recibe una señal de interrupción, se establece `running` en 0, se espera a que el thread de recepción termine y se cierra el socket.
+
+## Consideraciones
+
+* **Manejo de Errores:** El código incluye cierto manejo de errores (por ejemplo, al crear el socket, conectar, enviar la suscripción, recibir mensajes y crear el thread), pero podría mejorarse para ser más robusto.
+* **Protocolo de Comunicación:** Este consumidor asume un protocolo de comunicación simple basado en strings para la suscripción y mensajes sin formato para el payload. Un protocolo más estructurado (por ejemplo, usando JSON o un formato binario específico) podría ser más eficiente y flexible.
+* **Desuscripción:** La "desuscripción" se implementa simplemente cerrando la conexión. Un protocolo más completo podría incluir un mensaje explícito de desuscripción al broker.
+* **Reconexión:** El consumidor no implementa la lógica de reconexión automática en caso de que la conexión con el broker se pierda.
+* **Serialización/Deserialización:** Los mensajes recibidos se imprimen directamente como strings. Si el broker enviara mensajes en un formato binario (basado en la estructura `Message`), sería necesario deserializarlos correctamente en el consumidor. El código actual asume que el broker envía el payload directamente como un string.
+* **Formato del Mensaje Recibido:** El thread de recepción actualmente espera recibir el payload del mensaje directamente como un string. Si el broker enviara la estructura `Message` completa, la lógica de recepción tendría que deserializarla para acceder al payload.
