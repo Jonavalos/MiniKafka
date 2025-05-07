@@ -1,3 +1,47 @@
+## Descripción General del Programa
+
+Este programa implementa un sistema de message broker, un componente esencial en arquitecturas de software que habilita la comunicación asíncrona entre diferentes servicios o aplicaciones. El broker actúa como intermediario, recibiendo mensajes de los "productores", almacenándolos temporalmente y entregándolos a los "consumidores" interesados en esos mensajes. Este enfoque de comunicación desacopla a los productores y consumidores, permitiéndoles operar de forma independiente y a diferentes velocidades.
+
+## Funciones Principales y Aspectos Técnicos Clave
+
+1.  **Manejo de Conexiones de Clientes:**
+
+    * El broker utiliza sockets TCP para establecer y gestionar las conexiones con productores y consumidores.
+    * Para manejar la concurrencia y atender a múltiples clientes simultáneamente, el broker emplea un thread pool.
+    * El acceso a la cola de tareas del thread pool se sincroniza mediante mutexes y variables de condición, garantizando la seguridad en la manipulación de las tareas (suscripciones, desuscripciones, producción de mensajes).
+
+2.  **Gestión de Mensajes:**
+
+    * Los mensajes se almacenan en una cola compartida en memoria (`msg_queue`).
+    * El acceso concurrente a esta cola se controla con semáforos y mutexes, previniendo condiciones de carrera y manteniendo la integridad de los datos.
+    * Además, el broker mantiene un historial de mensajes recientes, protegido por un mutex, para permitir a los nuevos consumidores recuperar mensajes anteriores.
+
+3.  **Suscripciones y Grupos de Consumidores:**
+
+    * Los consumidores pueden suscribirse a temas específicos para recibir los mensajes correspondientes.
+    * El broker soporta la agrupación de consumidores, donde los mensajes de un tema se distribuyen entre los consumidores de un mismo grupo, facilitando el balanceo de carga y la escalabilidad.
+    * La gestión de suscripciones y la información de los grupos se realiza mediante listas enlazadas, con la concurrencia controlada por mutexes.
+
+4.  **Manejo de Offsets de Consumo:**
+
+    * El broker realiza un seguimiento del último mensaje consumido por cada consumidor dentro de un grupo y tema.
+    * Este seguimiento es fundamental para garantizar la entrega de mensajes al menos una vez y para permitir a los consumidores reanudar el consumo desde el punto donde se detuvieron.
+    * Los offsets de consumo se almacenan y cargan desde un archivo, proporcionando persistencia.
+
+5.  **Logging:**
+
+    * El broker incluye un sistema de logging asíncrono para registrar eventos y errores.
+    * Los mensajes de registro se encolan y se escriben en un archivo por un hilo dedicado, evitando bloqueos en el flujo principal del programa.
+    * La sincronización en este sistema de logging también se logra mediante mutexes y variables de condición.
+
+6.  **Manejo de Señales:**
+
+    * El broker implementa el manejo de señales del sistema (como `SIGINT` y `SIGTERM`) para realizar un apagado limpio y ordenado.
+    * Este proceso incluye guardar los offsets de los consumidores, liberar recursos y notificar a los hilos en ejecución para que terminen su trabajo.
+
+**Resumen:**
+
+Este sistema de message broker es una solución robusta que emplea técnicas avanzadas de programación concurrente y de sistemas, incluyendo el uso extensivo de threads, mutexes, variables de condición, semáforos y memoria compartida. Estas técnicas permiten al broker proporcionar una comunicación eficiente, confiable y escalable entre productores y consumidores.
 
 ## Librerías Utilizadas
 
@@ -244,17 +288,6 @@ Manejo de errores
 
 Este flujo garantiza que el broker maneje de manera eficiente y segura la comunicación con los productores y consumidores, manteniendo un manejo robusto de los recursos y permitiendo una desconexión ordenada cuando sea necesario.
 
-
-
-
-
-
-
-
-
-
-
-
 # Producer del Message Broker
 
 Este es un productor simple para un sistema de message broker. Se conecta al broker, especifica un tema, y luego envía un único mensaje predefinido a ese tema.
@@ -269,27 +302,58 @@ Este es un productor simple para un sistema de message broker. Se conecta al bro
 
 ## Cómo Compilar y Ejecutar
 
-1.  **Guardar el código:** Guarda el código fuente en un archivo llamado `producer.c`.
-2.  **Compilar:** Abre una terminal y utiliza un compilador de C (como GCC) para compilar el código:
-    ```bash
-    gcc producer.c -o producer
-    ```
-3.  **Ejecutar:** Ejecuta el productor desde la terminal, proporcionando el ID del productor y el tema al que deseas enviar el mensaje:
-    ```bash
-    ./producer <producer_id> <topic>
-    ```
-    * `<producer_id>`: Un número entero que identifica a este productor.
-    * `<topic>`: El nombre del tema al que deseas enviar el mensaje.
+### Script para Pruebas de Producers (`test_producers.sh`)
 
-    **Ejemplos de ejecución:**
-    * Productor con ID 1 enviando al tema "noticias":
-        ```bash
-        ./producer 1 noticias
-        ```
-    * Productor con ID 2 enviando al tema "eventos":
-        ```bash
-        ./producer 2 eventos
-        ```
+Este script de Bash está diseñado para compilar el programa `producer.c` y lanzar múltiples instancias de productores, cada uno con un ID único y publicando mensajes a un tema especificado por el usuario.
+
+#### Funcionalidades
+
+* **Compilación Automática:** Compila el archivo fuente `producer.c` utilizando `gcc` y la librería `pthread`.
+* **Lanzamiento Múltiple de Producers:** Inicia un número predefinido de productores (actualmente configurado para lanzar 100 productores con IDs del 1 al 100).
+* **Especificación de Tema por Argumento:** Permite especificar el tema al que todos los productores publicarán como un argumento de línea de comandos.
+* **Asignación Automática de IDs:** Asigna a cada productor un ID único secuencialmente.
+* **Manejo de Señales:** Implementa un mecanismo de limpieza para detener todos los procesos de productor en ejecución al recibir las señales `SIGINT` (Ctrl+C) o `SIGTERM`.
+* **Espera de Finalización:** El script principal espera hasta que se reciba una señal de interrupción para finalizar, manteniendo los productores en ejecución hasta entonces.
+
+#### Cómo Utilizar
+
+1.  **Guardar el script:** Guarda el código del script en un archivo llamado `test_producers.sh` (o con el nombre que prefieras).
+2.  **Otorgar permisos de ejecución:** Abre una terminal y otorga permisos de ejecución al script:
+    ```bash
+    chmod +x test_producers.sh
+    ```
+3.  **Asegurarse de tener `producer.c`:** Asegúrate de que el archivo fuente del productor (`producer.c`) se encuentre en el directorio `../src/` relativo a la ubicación del script, tal como se especifica en la línea de compilación.
+4.  **Ejecutar el script:** Ejecuta el script desde la terminal, proporcionando el tema al que deseas que los productores publiquen:
+    ```bash
+    ./test_producers.sh <topic>
+    ```
+    Reemplaza `<topic>` con el nombre del tema deseado (por ejemplo, `noticias`, `eventos`, `temperaturas`).
+
+#### Configuración
+
+La siguiente variable en el script puede ser modificada para ajustar el comportamiento de las pruebas:
+
+* El bucle `for PRODUCER_ID in {1..100}` controla el número de productores que se lanzarán y sus IDs. Puedes modificar el rango `{1..100}` para lanzar más o menos productores con diferentes rangos de IDs.
+* `TOPIC=$1`: Esta variable toma el primer argumento pasado al script y lo utiliza como el tema para todos los productores.
+
+#### Funcionamiento
+
+1.  El script comienza estableciendo opciones seguras de Bash (`set -euo pipefail`).
+2.  Intenta compilar el archivo `../src/producer.c` utilizando `gcc` y enlazando la librería `pthread`. Si la compilación falla, se muestra un error y el script se detiene.
+3.  Verifica si se ha proporcionado exactamente un argumento de línea de comandos (el tema). Si no es así, muestra un mensaje de uso y se detiene.
+4.  El tema proporcionado se almacena en la variable `TOPIC`.
+5.  Se inicializa un array vacío (`PIDS`) para almacenar los IDs de proceso (PIDs) de los productores lanzados.
+6.  Se define una función `cleanup()` que se ejecutará al recibir las señales `SIGINT` o `SIGTERM`. Esta función itera sobre los PIDs almacenados y envía una señal `kill` a cada proceso de productor para detenerlos.
+7.  Se establece un `trap` para que la función `cleanup()` se ejecute al recibir las señales mencionadas.
+8.  El script procede a lanzar 100 productores.
+9.  Dentro de un bucle, para cada ID de productor del 1 al 100:
+    * Se muestra un mensaje indicando el ID del productor que se está iniciando.
+    * Se ejecuta el programa `producer` en segundo plano (`&`), pasándole el ID del productor y el tema como argumentos.
+    * El PID del proceso recién lanzado se añade al array `PIDS`.
+    * Se incluye un comentario sobre una pequeña pausa (`sleep 1`) que está comentada actualmente. Podrías descomentarla si necesitas introducir una pausa entre el lanzamiento de cada productor.
+10. Finalmente, se muestra un mensaje indicando que todos los productores han sido iniciados y el script principal entra en un estado de espera (`wait`) hasta que se reciba una señal de interrupción (por ejemplo, al presionar Ctrl+C). Al recibir la señal, se ejecutará la función `cleanup()` para detener todos los productores.
+
+Este script es una herramienta útil para generar carga en tu sistema de message broker con múltiples productores publicando al mismo tema.
 
 ## Detalles del Código
 
@@ -327,19 +391,6 @@ Este es un productor simple para un sistema de message broker. Se conecta al bro
 * **Formato del Mensaje:** El productor envía la estructura `Message` completa al broker. El broker debe estar preparado para recibir y procesar mensajes en este formato binario.
 * **Confirmaciones (Opcional):** Para una mayor fiabilidad, un productor más avanzado podría esperar confirmaciones del broker para asegurar que los mensajes se han recibido correctamente.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Consumer
 
 Este es un consumidor simple para un sistema de message broker. Se conecta al broker, se suscribe a un tema específico (opcionalmente dentro de un grupo de consumidores), y recibe los mensajes publicados en ese tema.
@@ -358,38 +409,59 @@ Este es un consumidor simple para un sistema de message broker. Se conecta al br
 
 ## Cómo Compilar y Ejecutar
 
-1.  **Guardar el código:** Guarda el código fuente en un archivo llamado `consumer.c`.
-2.  **Compilar:** Abre una terminal y utiliza un compilador de C (como GCC) para compilar el código:
-    ```bash
-    gcc consumer.c -o consumer -pthread
-    ```
-    El flag `-pthread` es necesario para habilitar el soporte de threads.
-3.  **Ejecutar:** Ejecuta el consumidor desde la terminal, proporcionando el ID del consumidor y el tema al que deseas suscribirte. Opcionalmente, puedes especificar un `group_id` y un `start_offset`:
-    ```bash
-    ./consumer <consumer_id> <topic> [group_id] [start_offset]
-    ```
-    * `<consumer_id>`: Un número entero que identifica a este consumidor.
-    * `<topic>`: El nombre del tema al que deseas suscribirte.
-    * `[group_id]` (opcional): El ID del grupo de consumidores al que pertenece este consumidor.
-    * `[start_offset]` (opcional): El offset del mensaje desde el cual comenzar a consumir.
+### Script para Pruebas de Consumers (`test_consumers.sh`)
 
-    **Ejemplos de ejecución:**
-    * Consumidor con ID 1, suscrito al tema "noticias":
-        ```bash
-        ./consumer 1 noticias
-        ```
-    * Consumidor con ID 2, suscrito al tema "eventos" y perteneciente al grupo "grupo-a":
-        ```bash
-        ./consumer 2 eventos grupo-a
-        ```
-    * Consumidor con ID 3, suscrito al tema "temperaturas" y consumiendo desde el inicio:
-        ```bash
-        ./consumer 3 temperaturas "" 0
-        ```
-    * Consumidor con ID 4, suscrito al tema "logs" y consumiendo solo los mensajes más recientes:
-        ```bash
-        ./consumer 4 logs grupo-b -1
-        ```
+Este script de Bash está diseñado para facilitar la compilación del programa `consumer.c` y el lanzamiento de múltiples instancias de consumidores para un tema específico, distribuyéndolos cíclicamente entre un conjunto de grupos de consumidores definidos.
+
+#### Funcionalidades
+
+* **Compilación Automática:** Compila el archivo fuente `consumer.c` utilizando `gcc` y la librería `pthread`.
+* **Lanzamiento Múltiple de Consumers:** Inicia un número configurable de consumidores.
+* **Asignación Cíclica de Grupos:** Asigna cada consumidor a un grupo diferente de forma rotativa, permitiendo probar el comportamiento del balanceo de carga del broker.
+* **Especificación de Tema:** Utiliza un tema predefinido para todos los consumidores lanzados.
+* **Manejo de Señales:** Implementa un mecanismo de limpieza para detener todos los procesos de consumidor en ejecución al recibir las señales `SIGINT` (Ctrl+C) o `SIGTERM`.
+* **Espera de Finalización:** El script principal espera hasta que se reciba una señal de interrupción para finalizar, manteniendo los consumidores en ejecución hasta entonces.
+
+#### Cómo Utilizar
+
+1.  **Guardar el script:** Guarda el código del script en un archivo llamado `test_consumers.sh` (o con el nombre que prefieras).
+2.  **Otorgar permisos de ejecución:** Abre una terminal y otorga permisos de ejecución al script:
+    ```bash
+    chmod +x test_consumers.sh
+    ```
+3.  **Asegurarse de tener `consumer.c`:** Asegúrate de que el archivo fuente del consumidor (`consumer.c`) se encuentre en el directorio `../src/` relativo a la ubicación del script, tal como se especifica en la línea de compilación.
+4.  **Ejecutar el script:** Ejecuta el script desde la terminal:
+    ```bash
+    ./test_consumers.sh
+    ```
+
+#### Configuración
+
+Las siguientes variables en el script pueden ser modificadas para ajustar el comportamiento de las pruebas:
+
+* `TOPIC="noticias"`: Define el tema al que se suscribirán todos los consumidores. Puedes cambiar `"noticias"` por el tema que desees probar.
+* `GRUPOS=("g1" "g2" "g3")`: Es un array que contiene los nombres de los grupos de consumidores que se utilizarán. Puedes añadir o eliminar grupos según tus necesidades. Los consumidores se asignarán a estos grupos de forma cíclica.
+* `NUM=5`: Define el número total de consumidores que se lanzarán. Puedes ajustar este valor para probar con diferentes cantidades de consumidores.
+
+#### Funcionamiento
+
+1.  El script comienza estableciendo opciones seguras de Bash (`set -euo pipefail`).
+2.  Se definen las variables de configuración para el tema, los grupos de consumidores y el número de consumidores a lanzar.
+3.  Se inicializa un array vacío (`CONSUMER_PIDS`) para almacenar los IDs de proceso (PIDs) de los consumidores lanzados.
+4.  Se define una función `cleanup()` que se ejecutará al recibir las señales `SIGINT` o `SIGTERM`. Esta función itera sobre los PIDs almacenados y envía una señal `kill` a cada proceso de consumidor para detenerlos.
+5.  Se establece un `trap` para que la función `cleanup()` se ejecute al recibir las señales mencionadas.
+6.  El script intenta compilar el archivo `../src/consumer.c` utilizando `gcc` y enlazando la librería `pthread`. Si la compilación falla, se muestra un error y el script se detiene.
+7.  Si la compilación es exitosa, el script procede a lanzar el número especificado de consumidores.
+8.  Dentro de un bucle, para cada consumidor:
+    * Se calcula un índice para seleccionar un grupo del array `GRUPOS` de forma cíclica.
+    * Se obtiene el nombre del grupo correspondiente.
+    * Se muestra un mensaje indicando el ID del consumidor y el grupo al que se unirá.
+    * Se ejecuta el programa `consumer` en segundo plano (`&`), pasándole el ID del consumidor, el tema y el grupo como argumentos. La entrada estándar del consumidor se redirige desde `/dev/null`.
+    * El PID del proceso recién lanzado se añade al array `CONSUMER_PIDS`.
+    * Se introduce una breve pausa (`sleep 0.2`) entre el lanzamiento de cada consumidor para evitar una sobrecarga inicial.
+9.  Finalmente, se muestra un mensaje indicando que todos los consumidores están activos y el script principal entra en un estado de espera (`wait`) hasta que se reciba una señal de interrupción (por ejemplo, al presionar Ctrl+C). Al recibir la señal, se ejecutará la función `cleanup()` para detener todos los consumidores.
+
+Este script es una herramienta útil para probar y verificar el comportamiento de tu sistema de message broker con múltiples consumidores en diferentes grupos.
 
 ## Detalles del Código
 
@@ -423,3 +495,96 @@ Este es un consumidor simple para un sistema de message broker. Se conecta al br
 * **Reconexión:** El consumidor no implementa la lógica de reconexión automática en caso de que la conexión con el broker se pierda.
 * **Serialización/Deserialización:** Los mensajes recibidos se imprimen directamente como strings. Si el broker enviara mensajes en un formato binario (basado en la estructura `Message`), sería necesario deserializarlos correctamente en el consumidor. El código actual asume que el broker envía el payload directamente como un string.
 * **Formato del Mensaje Recibido:** El thread de recepción actualmente espera recibir el payload del mensaje directamente como un string. Si el broker enviara la estructura `Message` completa, la lógica de recepción tendría que deserializarla para acceder al payload.
+
+# Limitaciones del Programa
+
+El sistema de message broker, tal como está implementado, presenta ciertas limitaciones que deben tenerse en cuenta:
+
+* **File Descriptors y Procesos del Sistema Operativo:** Una limitación inherente a cualquier aplicación que maneja conexiones de red es la cantidad de file descriptors y procesos que el sistema operativo puede abrir. Cada conexión de cliente (productor o consumidor) consume un file descriptor. Si el número de clientes simultáneos excede los límites configurados en el sistema operativo, el broker podría fallar al aceptar nuevas conexiones.
+
+    * **Verificación y Ajuste:** En sistemas Linux y similares, estos límites se pueden verificar y, en algunos casos, ajustar utilizando los comandos `ulimit -n` (para el número máximo de file descriptors abiertos por proceso) y `ulimit -u` (para el número máximo de procesos por usuario). Es importante monitorear estos límites en el sistema donde se despliega el broker, especialmente en entornos con un gran número de clientes. Si es necesario soportar una alta concurrencia, se pueden intentar aumentar estos límites, aunque esto requiere privilegios de administrador y debe hacerse con precaución, entendiendo las implicaciones para la estabilidad del sistema.
+
+* **Cantidad de Grupos de Consumidores:** La cantidad de grupos de consumidores que el broker puede gestionar simultáneamente está actualmente limitada por el tamaño del array `group_distribution_states` definido como:
+
+    ```c
+    GroupDistributionState group_distribution_states[100];
+    int num_group_distribution_states = 0;
+    pthread_mutex_t group_distribution_state_mutex = PTHREAD_MUTEX_INITIALIZER;
+    ```
+
+    Actualmente, se pueden registrar hasta **100** grupos de consumidores únicos. Si se intenta crear un número mayor de grupos distintos, el comportamiento del broker podría ser impredecible o fallar al registrar el nuevo grupo.
+
+    * **Ajuste:** Esta limitación se puede modificar directamente en el código fuente del broker, cambiando el tamaño del array `group_distribution_states`. Si se anticipa la necesidad de un mayor número de grupos, se deberá aumentar este valor y recompilar el broker. Consideraciones sobre el uso de memoria deben tenerse en cuenta al aumentar este límite significativamente.
+
+* **Tamaño de los Mensajes:** El tamaño máximo del payload de un mensaje está limitado por la constante `MSG_PAYLOAD_SIZE`, definida como **256 bytes**:
+
+    ```c
+    #define MSG_PAYLOAD_SIZE 256
+    ```
+
+    Los productores no podrán enviar mensajes cuyo payload exceda este tamaño, y el broker y los consumidores esperarán mensajes con un payload dentro de este límite.
+
+* **Longitud de Temas:** La longitud máxima de un tema está limitada por la constante `MAX_TOPIC_LEN` y el tamaño del array `topic` en la estructura `Message`, ambos definidos como **64 bytes**:
+
+    ```c
+    #define MAX_TOPIC_LEN 64
+
+    typedef struct {
+        // ...
+        char topic[64];
+        // ...
+    } Message;
+    ```
+
+    Los productores y consumidores no podrán utilizar temas que excedan esta longitud.
+
+* **Capacidad de las Colas de Mensajes:** La capacidad de la cola principal de mensajes del broker (`msg_queue`) y la cola de logs (`log_queue`) están limitadas por la constante `MSG_QUEUE_CAPACITY` y `LOG_QUEUE_CAPACITY`, respectivamente, ambos definidos como **100 mensajes**:
+
+    ```c
+    #define LOG_QUEUE_CAPACITY 100
+    #define MSG_QUEUE_CAPACITY 100
+
+    // ...
+
+    typedef struct {
+        // ...
+        Message messages[MSG_QUEUE_CAPACITY];
+    } MessageQueue;
+
+    typedef struct {
+        // ...
+        LogMessage messages[LOG_QUEUE_CAPACITY];
+    } LogQueue;
+    ```
+
+    Si la tasa de producción de mensajes excede la capacidad de procesamiento del broker o la tasa de escritura de logs, estas colas podrían llenarse, lo que podría resultar en la pérdida de mensajes (en el caso de la cola principal) o la pérdida de logs.
+
+* **Historial de Mensajes:** El broker mantiene un historial de los últimos `MAX_MESSAGE_HISTORY` (**1000**) mensajes:
+
+    ```c
+    #define MAX_MESSAGE_HISTORY 1000
+    Message message_history[MAX_MESSAGE_HISTORY];
+    int message_history_count = 0;
+    pthread_mutex_t message_history_mutex = PTHREAD_MUTEX_INITIALIZER;
+    ```
+
+    Los consumidores que se conecten y soliciten mensajes desde el inicio solo podrán acceder a los últimos 1000 mensajes almacenados en este historial. Los mensajes más antiguos se perderán del historial.
+
+* **Tamaño de la Cola de Tareas del Thread Pool:** El thread pool utilizado por el broker tiene una cola de tareas implícita limitada por la velocidad a la que los threads pueden procesar las tareas entrantes. Si la tasa de llegada de nuevas conexiones o mensajes excede la capacidad del thread pool (actualmente con un tamaño de **50 threads** definido por `THREAD_POOL_SIZE`), las tareas podrían acumularse, lo que podría llevar a una latencia mayor en el procesamiento.
+
+* **Cantidad de Temas por Suscripción:** Cada consumidor, en la estructura `Subscription`, tiene espacio para suscribirse a un máximo de **10** temas:
+
+    ```c
+    typedef struct Subscription {
+        // ...
+        char topics[10][64];
+        int topic_count;
+        // ...
+    } ConsumerSubscription;
+    ```
+
+    Un consumidor no podrá suscribirse a más de 10 temas simultáneamente.
+
+* **Miembros por Grupo:** La implementación de grupos de consumidores podría tener limitaciones implícitas en la forma en que se gestionan los miembros dentro de un grupo, aunque no se define una constante explícita para el número máximo de miembros por grupo en las estructuras proporcionadas. Sin embargo, la lógica de distribución dentro de los grupos podría tener consideraciones de eficiencia con un número muy grande de miembros.
+
+Es importante tener en cuenta estas limitaciones al diseñar la arquitectura y el despliegue del sistema de message broker, y considerar si es necesario ajustar estas limitaciones en función de los requisitos específicos de la aplicación.

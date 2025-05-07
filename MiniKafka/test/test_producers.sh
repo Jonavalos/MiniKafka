@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =========================================================
-# Script para compilar y lanzar 5 producers con IDs del 1 al 5
+# Script para compilar y lanzar N producers con IDs del 1 al N
 # =========================================================
 
 set -euo pipefail
@@ -41,8 +41,8 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
-# Lanzar producers con IDs del 1 al 5
-echo "Iniciando 5 producers para el topic '${TOPIC}'..."
+# Lanzar producers con IDs del 1 al N
+echo "Iniciando N producers para el topic '${TOPIC}'..."
 clear
 for PRODUCER_ID in {1..100}; do
   echo "  - Producer ID=${PRODUCER_ID}"
