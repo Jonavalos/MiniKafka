@@ -317,7 +317,7 @@ Este script de Bash está diseñado para compilar el programa `producer.c` y lan
 
 #### Cómo Utilizar
 
-1.  **Guardar el script:** Guarda el código del script en un archivo llamado `test_producers.sh` (o con el nombre que prefieras).
+1.  **Guardar el script:** Guarda el código del script en un archivo llamado `test_producers.sh` en la carpeta test.
 2.  **Otorgar permisos de ejecución:** Abre una terminal y otorga permisos de ejecución al script:
     ```bash
     chmod +x test_producers.sh
@@ -424,7 +424,7 @@ Este script de Bash está diseñado para facilitar la compilación del programa 
 
 #### Cómo Utilizar
 
-1.  **Guardar el script:** Guarda el código del script en un archivo llamado `test_consumers.sh` (o con el nombre que prefieras).
+1.  **Guardar el script:** Guarda el código del script en un archivo llamado `test_consumers.sh` en la carpeta test.
 2.  **Otorgar permisos de ejecución:** Abre una terminal y otorga permisos de ejecución al script:
     ```bash
     chmod +x test_consumers.sh
