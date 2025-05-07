@@ -190,28 +190,28 @@ printf("Conexión al broker establecida correctamente\n");
 printf("\nComandos disponibles:\n");
 printf("  quit - Salir del consumidor\n");
 
-char command[64];
+// char command[64];
 while (running) {
-    printf("> ");
-    if (fgets(command, sizeof(command), stdin) == NULL) {
-        if (errno == EINTR) continue; // Interrupción por señal
-        break;
-    }
+    // printf("> ");
+    // if (fgets(command, sizeof(command), stdin) == NULL) {
+    //     if (errno == EINTR) continue; // Interrupción por señal
+    //     break;
+    // }
 
     // Eliminar el salto de línea
-    size_t len = strlen(command);
-    if (len > 0 && command[len-1] == '\n') {
-        command[len-1] = '\0';
-    }
+    // size_t len = strlen(command);
+    // if (len > 0 && command[len-1] == '\n') {
+    //     command[len-1] = '\0';
+    // }
 
-    // Procesar comando
-    if (strcmp(command, "quit") == 0) {
-        send_unsubscribe_message();
-        running = 0;
-        break;
-    } else if (strlen(command) > 0) {
-        printf("Comando desconocido: %s\n", command);
-    }
+    // // Procesar comando
+    // if (strcmp(command, "quit") == 0) {
+    //     send_unsubscribe_message();
+    //     running = 0;
+    //     break;
+    // } else if (strlen(command) > 0) {
+    //     printf("Comando desconocido: %s\n", command);
+    // }
         
 }
 
