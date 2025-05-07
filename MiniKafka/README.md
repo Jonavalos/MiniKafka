@@ -1,3 +1,16 @@
+# Sistema de Message Broker
+
+## Autores
+
+Este sistema de message broker fue desarrollado por:
+
+* Jonathan Avalos Montero
+* Josue Pineda Quesada
+
+Ambos estudiantes de la Universidad Nacional de Costa Rica, para el curso de Sistemas Operativos.
+Este proyecto fue asignado como el primer proyecto del curso impartido por el profesor José Pablo Calvo Suarez.
+
+
 ## Descripción General del Programa
 
 Este programa implementa un sistema de message broker, un componente esencial en arquitecturas de software que habilita la comunicación asíncrona entre diferentes servicios o aplicaciones. El broker actúa como intermediario, recibiendo mensajes de los "productores", almacenándolos temporalmente y entregándolos a los "consumidores" interesados en esos mensajes. Este enfoque de comunicación desacopla a los productores y consumidores, permitiéndoles operar de forma independiente y a diferentes velocidades.
@@ -328,6 +341,7 @@ Este script de Bash está diseñado para compilar el programa `producer.c` y lan
     ./test_producers.sh <topic>
     ```
     Reemplaza `<topic>` con el nombre del tema deseado (por ejemplo, `noticias`, `eventos`, `temperaturas`).
+Se debe ejecutar despues del script de consumers.
 
 #### Configuración
 
@@ -434,7 +448,7 @@ Este script de Bash está diseñado para facilitar la compilación del programa 
     ```bash
     ./test_consumers.sh
     ```
-
+Se debe ejecutar luego de `broker.c`, ubicado en `../src/`
 #### Configuración
 
 Las siguientes variables en el script pueden ser modificadas para ajustar el comportamiento de las pruebas:
@@ -458,7 +472,7 @@ Las siguientes variables en el script pueden ser modificadas para ajustar el com
     * Se muestra un mensaje indicando el ID del consumidor y el grupo al que se unirá.
     * Se ejecuta el programa `consumer` en segundo plano (`&`), pasándole el ID del consumidor, el tema y el grupo como argumentos. La entrada estándar del consumidor se redirige desde `/dev/null`.
     * El PID del proceso recién lanzado se añade al array `CONSUMER_PIDS`.
-    * Se introduce una breve pausa (`sleep 0.2`) entre el lanzamiento de cada consumidor para evitar una sobrecarga inicial.
+    * Se introduce una breve pausa (`sleep 0.2`) entre el lanzamiento de cada consumidor para evitar una sobrecarga inicial. (La pausa fue comentada para disminuir el tiempo de creacion y que no sea tan tedioso esperar. Puede descomentarse para pruebas mas pesadas)
 9.  Finalmente, se muestra un mensaje indicando que todos los consumidores están activos y el script principal entra en un estado de espera (`wait`) hasta que se reciba una señal de interrupción (por ejemplo, al presionar Ctrl+C). Al recibir la señal, se ejecutará la función `cleanup()` para detener todos los consumidores.
 
 Este script es una herramienta útil para probar y verificar el comportamiento de tu sistema de message broker con múltiples consumidores en diferentes grupos.
@@ -592,8 +606,9 @@ El sistema de message broker, tal como está implementado, presenta ciertas limi
 
 Es fundamental tener en cuenta las limitaciones mencionadas anteriormente al diseñar e implementar el sistema de message broker. La adaptación de estas limitaciones a los requisitos específicos de cada aplicación es crucial para garantizar un funcionamiento óptimo.
 
-En particular, se realizaron pruebas exhaustivas con 1000 productores y 1000 consumidores concurrentes para evaluar la robustez y la capacidad del sistema. En estas pruebas, se transmitieron exitosamente un total de 3000 mensajes (1000 mensajes por cada uno de los tres grupos de consumidores) sin que se registrara ninguna pérdida de datos. La integridad de los datos fue verificada tanto por la cantidad de líneas en los logs como mediante el análisis asistido por IA.
+En particular, se realizaron pruebas exhaustivas con 1000 productores y 1000 consumidores concurrentes para evaluar la robustez y la capacidad del sistema. En estas pruebas, se transmitieron exitosamente un total de 3000 mensajes (1000 mensajes por cada uno de los tres grupos de consumidores) sin que se registrara ninguna pérdida de datos. La integridad de los datos fue verificada tanto por la cantidad de líneas en los logs como mediante el análisis asistido por IA. IMPORTANTE EJECUTAR PRIMERO LOS CONSUMERS Y LUEGO PRODUCERS.
 
 Para lograr la ejecución exitosa de estas pruebas de alta concurrencia, fue necesario aumentar el límite del número de file descriptors disponibles en el sistema operativo de 1024 a 2048. Esto subraya la importancia de considerar y ajustar los límites del sistema operativo (como se mencionó en la sección anterior sobre "Limitaciones del Programa") para soportar cargas de trabajo elevadas.
 
-Los resultados detallados de estas pruebas se encuentran disponibles en el archivo `broker.log`. Este archivo contiene, además de la información de registro solicitada, mensajes de DEBUG adicionales que proporcionan una visión más profunda y detallada del comportamiento interno del programa durante las pruebas. Esta información de depuración puede ser valiosa para el análisis de rendimiento, la resolución de problemas y la optimización del sistema. Los mensajes de DEBUG van a encontrarse comentados a lo largo del codigo para que a la hora de hacer nuevas pruebas, no interfieran con los requerimientos dados por el profesor.
+Los resultados detallados de estas pruebas se encuentran disponibles en el archivo `broker.log`. Este archivo contiene, además de la información de registro solicitada, mensajes de DEBUG adicionales que proporcionan una visión más profunda y detallada del comportamiento interno del programa durante las pruebas. Esta información de depuración puede ser valiosa para el análisis de rendimiento, la resolución de problemas y la optimización del sistema. Los mensajes de DEBUG van a encontrarse comentados a lo largo del codigo para que a la hora de hacer nuevas pruebas, no interfieran con los requerimientos dados por el profesor. En `broker.log`, luego de los resultados detallados, se encuentran los logs de una prueba en limpio sin los mensajes de DEBUG.
+
