@@ -214,8 +214,8 @@ void shutdown_logger();
 
 //Client connection
 void *connection_handler_thread(void *arg);
-void *producer_handler_thread(void *arg);
-void *producer_handler_thread_fd(void *arg);
+void *producer_handler_thread(void *arg); //no se usa pero es para apoyo moral
+void *producer_handler_thread_fd(void *arg); //este si se usa. ocupa el apoyo moral del de arriba
 int get_next_consumer_in_group(const char *topic, const char *group_id);
 
 //Offsets 
